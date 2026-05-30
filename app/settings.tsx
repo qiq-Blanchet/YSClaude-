@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable,
   ActivityIndicator, Alert, Modal, FlatList, Switch,
@@ -6,11 +6,16 @@ import {
 import { useRouter } from 'expo-router';
 import { colors } from '../src/theme/colors';
 import { fonts } from '../src/theme/fonts';
-import { useSettingsStore, NamedAPIConfig, HiddenRange, TTSConfig, MemoryVaultConfig, WebSearchConfig } from '../src/stores/settings';
+import { useSettingsStore, NamedAPIConfig, TTSConfig, MemoryVaultConfig, WebSearchConfig } from '../src/stores/settings';
 import { useChatStore } from '../src/stores/chat';
+import { useDiaryStore } from '../src/stores/diary';
 import { playTTS, stopTTS } from '../src/services/tts';
+import { streamChat } from '../src/services/api';
+import { Diary } from '../src/types';
+import { getFavoriteDiaries } from '../src/db/operations';
+import { formatFullTime, formatTimeMarker } from '../src/utils/time';
 
-const TABS = ['API 配置', '对话设置', 'TTS 配置', 'Tool 设置'] as const;
+const TABS = ['API 配置', '对话设置', 'TTS 配置', 'Tool 设置', '日记'] as const;
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -45,6 +50,7 @@ export default function SettingsScreen() {
       {activeTab === 1 && <ChatSettingsTab />}
       {activeTab === 2 && <TTSConfigTab />}
       {activeTab === 3 && <ToolConfigTab />}
+      {activeTab === 4 && <DiaryTab />}
     </View>
   );
 }
@@ -274,12 +280,16 @@ function APIConfigTab() {
 /* ==================== 对话设置 Tab ==================== */
 
 function ChatSettingsTab() {
-  const { hiddenRanges, maxOutputTokens, systemPrompt, setSystemPrompt, addHiddenRange, removeHiddenRange, setMaxOutputTokens } = useSettingsStore();
-  const { messages } = useChatStore();
+  const { maxOutputTokens, systemPrompt, setSystemPrompt, setMaxOutputTokens } = useSettingsStore();
+  // 隐藏楼层现在按对话独立存储，数据源改为 chat store
+  const { messages, conversationId, hiddenRanges, addHiddenRange, removeHiddenRange } = useChatStore();
   const [fromStr, setFromStr] = useState('');
   const [toStr, setToStr] = useState('');
   const [tokensStr, setTokensStr] = useState(maxOutputTokens ? String(maxOutputTokens) : '');
   const [promptText, setPromptText] = useState(systemPrompt);
+
+  // 仅取 user/assistant 消息作为「楼层」序列（1-based）
+  const floorMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
 
   function handleAddRange() {
     const from = parseInt(fromStr, 10);
@@ -291,6 +301,31 @@ function ChatSettingsTab() {
     addHiddenRange({ from, to });
     setFromStr('');
     setToStr('');
+  }
+
+  // 预览：两个输入都为有效数字时，给出该范围首尾两条消息的摘要
+  const preview = (() => {
+    const from = parseInt(fromStr, 10);
+    const to = parseInt(toStr, 10);
+    if (isNaN(from) || isNaN(to) || from < 1 || to < from) return null;
+    const firstMsg = floorMessages[from - 1] ?? null;
+    const lastMsg = floorMessages[to - 1] ?? null;
+    if (!firstMsg && !lastMsg) return null;
+    return {
+      from,
+      to,
+      first: firstMsg,
+      last: from === to ? null : lastMsg,
+    };
+  })();
+
+  function roleLabel(role: string) {
+    return role === 'user' ? '你' : 'AI';
+  }
+
+  function snippet(text: string) {
+    const t = text.replace(/\s+/g, ' ').trim();
+    return t.length > 60 ? t.slice(0, 60) + '…' : t;
   }
 
   function handleSaveTokens() {
@@ -335,33 +370,74 @@ function ChatSettingsTab() {
 
       {/* 隐藏消息 */}
       <Text style={styles.sectionTitle}>隐藏消息</Text>
-      <Text style={styles.hint}>隐藏的消息不会发送给 AI，可用于节省 token</Text>
+      <Text style={styles.hint}>隐藏的消息不会发送给 AI，可用于节省 token。隐藏范围按对话独立保存，重叠或相邻的范围会自动合并。</Text>
 
-      {hiddenRanges.length > 0 && (
-        <View style={styles.rangeList}>
-          {hiddenRanges.map((r, i) => (
-            <View key={i} style={styles.rangeItem}>
-              <Text style={styles.rangeText}>第 {r.from} 条 ~ 第 {r.to} 条</Text>
-              <Pressable onPress={() => removeHiddenRange(i)}>
-                <Text style={styles.rangeDelete}>×</Text>
-              </Pressable>
+      {!conversationId ? (
+        <Text style={styles.hint}>请先打开一个对话后再设置隐藏范围。</Text>
+      ) : (
+        <>
+          {hiddenRanges.length > 0 && (
+            <View style={styles.rangeList}>
+              {hiddenRanges.map((r, i) => (
+                <View key={i} style={styles.rangeItem}>
+                  <Text style={styles.rangeText}>第 {r.from} 条 ~ 第 {r.to} 条</Text>
+                  <Pressable onPress={() => removeHiddenRange(i)}>
+                    <Text style={styles.rangeDelete}>×</Text>
+                  </Pressable>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-      )}
+          )}
 
-      <View style={styles.rangeInputRow}>
-        <Text style={styles.rangeLabel}>从第</Text>
-        <TextInput style={styles.rangeInput} value={fromStr} onChangeText={setFromStr}
-          keyboardType="number-pad" placeholder="X" placeholderTextColor={colors.textTertiary} />
-        <Text style={styles.rangeLabel}>条到第</Text>
-        <TextInput style={styles.rangeInput} value={toStr} onChangeText={setToStr}
-          keyboardType="number-pad" placeholder="Y" placeholderTextColor={colors.textTertiary} />
-        <Text style={styles.rangeLabel}>条</Text>
-        <Pressable style={styles.rangeAddButton} onPress={handleAddRange}>
-          <Text style={styles.rangeAddText}>添加</Text>
-        </Pressable>
-      </View>
+          <View style={styles.rangeInputRow}>
+            <Text style={styles.rangeLabel}>从第</Text>
+            <TextInput style={styles.rangeInput} value={fromStr} onChangeText={setFromStr}
+              keyboardType="number-pad" placeholder="X" placeholderTextColor={colors.textTertiary} />
+            <Text style={styles.rangeLabel}>条到第</Text>
+            <TextInput style={styles.rangeInput} value={toStr} onChangeText={setToStr}
+              keyboardType="number-pad" placeholder="Y" placeholderTextColor={colors.textTertiary} />
+            <Text style={styles.rangeLabel}>条</Text>
+            <Pressable style={styles.rangeAddButton} onPress={handleAddRange}>
+              <Text style={styles.rangeAddText}>添加</Text>
+            </Pressable>
+          </View>
+
+          {/* 预览：选定范围的首尾两条消息 */}
+          {preview && (
+            <View style={styles.previewBox}>
+              <Text style={styles.previewHint}>预览所选范围</Text>
+              {preview.first ? (
+                <View style={styles.previewItem}>
+                  <Text style={styles.previewLabel}>
+                    第 {preview.from} 条（{roleLabel(preview.first.role)}）
+                  </Text>
+                  <Text style={styles.previewText} numberOfLines={2}>
+                    {snippet(preview.first.content) || '（空消息）'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.previewText}>第 {preview.from} 条超出当前消息范围</Text>
+              )}
+              {preview.last !== null && (
+                preview.last ? (
+                  <View style={[styles.previewItem, { marginTop: 8 }]}>
+                    <Text style={styles.previewLabel}>
+                      第 {preview.to} 条（{roleLabel(preview.last.role)}）
+                    </Text>
+                    <Text style={styles.previewText} numberOfLines={2}>
+                      {snippet(preview.last.content) || '（空消息）'}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.previewText, { marginTop: 8 }]}>
+                    第 {preview.to} 条超出当前消息范围
+                  </Text>
+                )
+              )}
+            </View>
+          )}
+        </>
+      )}
 
       {/* AI 输出字数限制 */}
       <Text style={styles.sectionTitle}>AI 输出限制</Text>
@@ -655,6 +731,273 @@ function ToolConfigTab() {
   );
 }
 
+/* ==================== 日记 Tab ==================== */
+
+function DiaryTab() {
+  const { diaries, loadDiaries, addDiary, editDiary, toggleFavorite, removeDiary } = useDiaryStore();
+  // 隐藏楼层随对话独立，与待总结的消息同源，统一从 chat store 取
+  const { messages, hiddenRanges } = useChatStore();
+  const { apiConfigs, activeConfigIndex, systemPrompt, maxOutputTokens } = useSettingsStore();
+
+  // AI 总结相关 state
+  const [fromStr, setFromStr] = useState('');
+  const [toStr, setToStr] = useState('');
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [summaryTitle, setSummaryTitle] = useState('');
+  const summaryAbort = useRef<AbortController | null>(null);
+
+  // 编辑日记 Modal state
+  const [editing, setEditing] = useState<Diary | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+
+  useEffect(() => {
+    loadDiaries();
+  }, []);
+
+  async function handleSummarize() {
+    const config = apiConfigs[activeConfigIndex];
+    if (!config || !config.baseUrl || !config.apiKey) {
+      Alert.alert('提示', '请先在设置中配置 API');
+      return;
+    }
+
+    // 取当前对话的 user/assistant 消息
+    const chatMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    if (chatMessages.length === 0) {
+      Alert.alert('提示', '当前对话没有可总结的消息');
+      return;
+    }
+
+    const total = chatMessages.length;
+    let from = parseInt(fromStr, 10);
+    let to = parseInt(toStr, 10);
+    if (isNaN(from)) from = 1;
+    if (isNaN(to)) to = total;
+    if (from < 1) from = 1;
+    if (to > total) to = total;
+    if (from > to) {
+      Alert.alert('提示', '请输入有效的范围（起始 ≤ 结束）');
+      return;
+    }
+
+    // 按 1-based index 取范围内、且未被隐藏的消息
+    const selected = chatMessages.filter((_, index) => {
+      const msgNum = index + 1;
+      if (msgNum < from || msgNum > to) return false;
+      const hidden = hiddenRanges.some((r) => msgNum >= r.from && msgNum <= r.to);
+      return !hidden;
+    });
+
+    if (selected.length === 0) {
+      Alert.alert('提示', '所选范围内没有未隐藏的消息');
+      return;
+    }
+
+    // 拼接对话内容
+    const conversationText = selected
+      .map((m) => `${m.role === 'user' ? '用户' : '我'}：${m.content}`)
+      .join('\n\n');
+
+    // 已收藏日记作为近期日记
+    const favorites = await getFavoriteDiaries();
+    const memoryMessages: { role: string; content: string }[] = [];
+    if (favorites.length > 0) {
+      const memoryContent = favorites
+        .map((d) => `【${formatTimeMarker(d.createdAt)}】${d.title}\n${d.content}`)
+        .join('\n\n---\n\n');
+      memoryMessages.push({ role: 'system', content: `以下是你的近期日记：\n\n${memoryContent}` });
+    }
+
+    const summaryPrompt =
+      '请你以第一人称、流水账的形式，把下面这段对话总结成一篇今天的日记。' +
+      '只输出日记正文，不要加任何额外说明或标题。';
+
+    setSummarizing(true);
+    setSummaryText('');
+    summaryAbort.current = new AbortController();
+
+    try {
+      await streamChat(
+        {
+          baseUrl: config.baseUrl,
+          apiKey: config.apiKey,
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...memoryMessages,
+            { role: 'user', content: `${summaryPrompt}\n\n以下是对话内容：\n\n${conversationText}` },
+          ],
+          maxTokens: maxOutputTokens || undefined,
+        },
+        (token: string) => setSummaryText((prev) => prev + token),
+        summaryAbort.current.signal
+      );
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        Alert.alert('总结失败', e.message || '请求失败');
+      }
+    } finally {
+      setSummarizing(false);
+      summaryAbort.current = null;
+    }
+  }
+
+  function handleStopSummarize() {
+    summaryAbort.current?.abort();
+    setSummarizing(false);
+  }
+
+  async function handleSaveSummary() {
+    const content = summaryText.trim();
+    if (!content) {
+      Alert.alert('提示', '没有可保存的内容');
+      return;
+    }
+    const title = summaryTitle.trim() || `日记 ${formatFullTime(Date.now())}`;
+    await addDiary(title, content);
+    setSummaryText('');
+    setSummaryTitle('');
+    setFromStr('');
+    setToStr('');
+    Alert.alert('已保存', '日记已保存');
+  }
+
+  function handleOpenEdit(d: Diary) {
+    setEditing(d);
+    setEditTitle(d.title);
+    setEditContent(d.content);
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    await editDiary(editing.id, { title: editTitle.trim(), content: editContent.trim() });
+    setEditing(null);
+  }
+
+  function handleDeleteDiary(d: Diary) {
+    Alert.alert('删除日记', `确定删除「${d.title || '无标题'}」？`, [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: () => removeDiary(d.id) },
+    ]);
+  }
+
+  return (
+    <ScrollView style={styles.content}>
+      {/* AI 日记总结 */}
+      <Text style={styles.sectionTitle}>AI 日记总结</Text>
+      <Text style={styles.hint}>选择消息范围，让 AI 以第一人称流水账总结为日记（自动排除已隐藏消息，留空则全部）</Text>
+
+      <View style={styles.rangeInputRow}>
+        <Text style={styles.rangeLabel}>从第</Text>
+        <TextInput style={styles.rangeInput} value={fromStr} onChangeText={setFromStr}
+          keyboardType="number-pad" placeholder="1" placeholderTextColor={colors.textTertiary} />
+        <Text style={styles.rangeLabel}>条到第</Text>
+        <TextInput style={styles.rangeInput} value={toStr} onChangeText={setToStr}
+          keyboardType="number-pad" placeholder="末" placeholderTextColor={colors.textTertiary} />
+        <Text style={styles.rangeLabel}>条</Text>
+        {summarizing ? (
+          <Pressable style={styles.rangeAddButton} onPress={handleStopSummarize}>
+            <Text style={styles.rangeAddText}>停止</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={styles.rangeAddButton} onPress={handleSummarize}>
+            <Text style={styles.rangeAddText}>总结</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {(summaryText.length > 0 || summarizing) && (
+        <View style={styles.summaryBox}>
+          <TextInput
+            style={styles.summaryTitleInput}
+            value={summaryTitle}
+            onChangeText={setSummaryTitle}
+            placeholder="日记标题（留空自动生成）"
+            placeholderTextColor={colors.textTertiary}
+          />
+          <TextInput
+            style={styles.summaryContentInput}
+            value={summaryText}
+            onChangeText={setSummaryText}
+            multiline
+            placeholder="AI 总结内容将显示在这里..."
+            placeholderTextColor={colors.textTertiary}
+          />
+          {summarizing ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+          ) : (
+            <Pressable style={styles.saveButton} onPress={handleSaveSummary}>
+              <Text style={styles.saveButtonText}>保存为日记</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {/* 我的日记 */}
+      <Text style={styles.sectionTitle}>我的日记</Text>
+      {diaries.length === 0 ? (
+        <Text style={styles.hint}>暂无日记</Text>
+      ) : (
+        diaries.map((d) => (
+          <Pressable
+            key={d.id}
+            style={styles.diaryItem}
+            onPress={() => handleOpenEdit(d)}
+            onLongPress={() => handleDeleteDiary(d)}
+          >
+            <Pressable style={styles.diaryStar} onPress={() => toggleFavorite(d.id)} hitSlop={8}>
+              <Text style={[styles.diaryStarText, d.isFavorite && styles.diaryStarActive]}>
+                {d.isFavorite ? '★' : '☆'}
+              </Text>
+            </Pressable>
+            <View style={styles.diaryContent}>
+              <Text style={styles.diaryTitle} numberOfLines={1}>{d.title || '无标题'}</Text>
+              <Text style={styles.diaryPreview} numberOfLines={1}>{d.content}</Text>
+              <Text style={styles.diaryDate}>{formatFullTime(d.createdAt)}</Text>
+            </View>
+          </Pressable>
+        ))
+      )}
+
+      <View style={{ height: 40 }} />
+
+      {/* 编辑日记 Modal */}
+      <Modal visible={!!editing} transparent animationType="fade">
+        <Pressable style={styles.overlay} onPress={() => setEditing(null)}>
+          <View style={styles.modal} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>编辑日记</Text>
+            <TextInput
+              style={styles.summaryTitleInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="日记标题"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <TextInput
+              style={styles.summaryContentInput}
+              value={editContent}
+              onChangeText={setEditContent}
+              multiline
+              placeholder="日记内容"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <View style={styles.modalButtons}>
+              <Pressable style={styles.modalCancel} onPress={() => setEditing(null)}>
+                <Text style={styles.modalCancelText}>取消</Text>
+              </Pressable>
+              <Pressable style={styles.modalConfirm} onPress={handleSaveEdit}>
+                <Text style={styles.modalConfirmText}>保存</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
+    </ScrollView>
+  );
+}
+
 /* ==================== Styles ==================== */
 
 const styles = StyleSheet.create({
@@ -755,4 +1098,43 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
   },
   rangeAddText: { color: '#FFFFFF', fontSize: 14, fontWeight: '500' },
+  previewBox: {
+    backgroundColor: colors.surface, borderRadius: 10, padding: 12, marginBottom: 20,
+  },
+  previewHint: {
+    fontSize: 11, color: colors.textTertiary, marginBottom: 8,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  previewItem: { gap: 3 },
+  previewLabel: { fontSize: 12, color: colors.primary, fontWeight: '600' },
+  previewText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  // Diary styles
+  summaryBox: {
+    backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 20,
+  },
+  summaryTitleInput: {
+    backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.inputBorder,
+    borderRadius: 10, padding: 12, fontSize: 15, fontWeight: '500', color: colors.text, marginBottom: 10,
+  },
+  summaryContentInput: {
+    backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.inputBorder,
+    borderRadius: 10, padding: 12, fontSize: 14, color: colors.text,
+    minHeight: 140, textAlignVertical: 'top', marginBottom: 10,
+  },
+  diaryItem: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8,
+  },
+  diaryStar: { paddingRight: 12, paddingTop: 1 },
+  diaryStarText: { fontSize: 20, color: colors.textTertiary },
+  diaryStarActive: { color: colors.primary },
+  diaryContent: { flex: 1, gap: 3 },
+  diaryTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
+  diaryPreview: { fontSize: 13, color: colors.textSecondary },
+  diaryDate: { fontSize: 11, color: colors.textTertiary, marginTop: 2 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 4 },
+  modalCancel: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  modalCancelText: { fontSize: 15, color: colors.textSecondary },
+  modalConfirm: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.primary },
+  modalConfirmText: { fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
 });

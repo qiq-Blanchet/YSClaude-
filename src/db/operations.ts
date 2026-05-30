@@ -1,12 +1,20 @@
 import { getDatabase } from './database';
-import { Conversation, Message } from '../types';
+import { Conversation, Message, Diary, HiddenRange } from '../types';
 
 export async function createConversation(conv: Conversation): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT INTO conversations (id, title, system_prompt, model, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [conv.id, conv.title, conv.systemPrompt, conv.model, conv.createdAt, conv.updatedAt]
+    `INSERT INTO conversations (id, title, system_prompt, model, created_at, updated_at, hidden_ranges)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      conv.id,
+      conv.title,
+      conv.systemPrompt,
+      conv.model,
+      conv.createdAt,
+      conv.updatedAt,
+      JSON.stringify(conv.hiddenRanges ?? []),
+    ]
   );
 }
 
@@ -44,6 +52,7 @@ export async function getAllConversations(): Promise<Conversation[]> {
     model: string;
     created_at: number;
     updated_at: number;
+    hidden_ranges: string | null;
   }>('SELECT * FROM conversations ORDER BY updated_at DESC');
 
   return rows.map((row) => ({
@@ -53,7 +62,44 @@ export async function getAllConversations(): Promise<Conversation[]> {
     model: row.model,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    hiddenRanges: parseHiddenRanges(row.hidden_ranges),
   }));
+}
+
+/* ==================== 隐藏楼层范围 CRUD ==================== */
+
+// 容错解析：损坏或非数组的 JSON 一律退回空数组
+function parseHiddenRanges(raw: string | null | undefined): HiddenRange[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (r) => r && typeof r.from === 'number' && typeof r.to === 'number'
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function getHiddenRanges(conversationId: string): Promise<HiddenRange[]> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ hidden_ranges: string | null }>(
+    'SELECT hidden_ranges FROM conversations WHERE id = ?',
+    [conversationId]
+  );
+  return parseHiddenRanges(row?.hidden_ranges);
+}
+
+export async function updateHiddenRanges(
+  conversationId: string,
+  ranges: HiddenRange[]
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('UPDATE conversations SET hidden_ranges = ? WHERE id = ?', [
+    JSON.stringify(ranges),
+    conversationId,
+  ]);
 }
 
 export async function insertMessage(conversationId: string, msg: Message): Promise<void> {
@@ -102,4 +148,101 @@ export async function getMessagesByConversation(conversationId: string): Promise
     toolCallId: row.tool_call_id || undefined,
     createdAt: row.created_at,
   }));
+}
+
+/* ==================== 日记 Diary CRUD ==================== */
+
+function mapDiaryRow(row: {
+  id: string;
+  title: string;
+  content: string;
+  is_favorite: number;
+  created_at: number;
+  updated_at: number;
+}): Diary {
+  return {
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    isFavorite: row.is_favorite === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createDiary(diary: Diary): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO diaries (id, title, content, is_favorite, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      diary.id,
+      diary.title,
+      diary.content,
+      diary.isFavorite ? 1 : 0,
+      diary.createdAt,
+      diary.updatedAt,
+    ]
+  );
+}
+
+export async function updateDiary(
+  id: string,
+  updates: Partial<Pick<Diary, 'title' | 'content' | 'isFavorite' | 'updatedAt'>>
+): Promise<void> {
+  const db = await getDatabase();
+  const sets: string[] = [];
+  const values: any[] = [];
+
+  if (updates.title !== undefined) {
+    sets.push('title = ?');
+    values.push(updates.title);
+  }
+  if (updates.content !== undefined) {
+    sets.push('content = ?');
+    values.push(updates.content);
+  }
+  if (updates.isFavorite !== undefined) {
+    sets.push('is_favorite = ?');
+    values.push(updates.isFavorite ? 1 : 0);
+  }
+  if (updates.updatedAt !== undefined) {
+    sets.push('updated_at = ?');
+    values.push(updates.updatedAt);
+  }
+
+  if (sets.length === 0) return;
+  values.push(id);
+  await db.runAsync(`UPDATE diaries SET ${sets.join(', ')} WHERE id = ?`, values);
+}
+
+export async function deleteDiary(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM diaries WHERE id = ?', [id]);
+}
+
+export async function getAllDiaries(): Promise<Diary[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    title: string;
+    content: string;
+    is_favorite: number;
+    created_at: number;
+    updated_at: number;
+  }>('SELECT * FROM diaries ORDER BY updated_at DESC');
+  return rows.map(mapDiaryRow);
+}
+
+export async function getFavoriteDiaries(): Promise<Diary[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    title: string;
+    content: string;
+    is_favorite: number;
+    created_at: number;
+    updated_at: number;
+  }>('SELECT * FROM diaries WHERE is_favorite = 1 ORDER BY updated_at DESC');
+  return rows.map(mapDiaryRow);
 }

@@ -16,11 +16,26 @@ export interface ToolCall {
   };
 }
 
+export interface HiddenRange {
+  from: number;
+  to: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
   systemPrompt: string;
   model: string;
+  createdAt: number;
+  updatedAt: number;
+  hiddenRanges?: HiddenRange[];
+}
+
+export interface Diary {
+  id: string;
+  title: string;
+  content: string;
+  isFavorite: boolean;
   createdAt: number;
   updatedAt: number;
 }

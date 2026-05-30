@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import { Message, Conversation } from '../types';
+import { Message, Conversation, HiddenRange } from '../types';
 import { randomUUID } from 'expo-crypto';
 import { streamChat, chatCompletion } from '../services/api';
 import { useSettingsStore } from './settings';
 import { getToolDefinitions, executeTool } from '../services/tools';
 import { formatCurrentTime, formatTimeMarker, TIME_GAP_THRESHOLD_MS } from '../utils/time';
+import { mergeRanges } from '../utils/ranges';
 import {
   createConversation,
   updateConversation,
@@ -12,11 +13,15 @@ import {
   updateMessageContent,
   deleteMessage,
   getMessagesByConversation,
+  getHiddenRanges,
+  updateHiddenRanges,
+  getFavoriteDiaries,
 } from '../db/operations';
 
 interface ChatState {
   conversationId: string | null;
   messages: Message[];
+  hiddenRanges: HiddenRange[];
   isStreaming: boolean;
   error: string | null;
 
@@ -30,6 +35,9 @@ interface ChatState {
   editMessage: (id: string, content: string) => Promise<void>;
   removeMessage: (id: string) => Promise<void>;
   regenerate: () => Promise<void>;
+  addHiddenRange: (range: HiddenRange) => Promise<void>;
+  removeHiddenRange: (index: number) => Promise<void>;
+  setHiddenRanges: (ranges: HiddenRange[]) => Promise<void>;
 }
 
 let abortController: AbortController | null = null;
@@ -41,6 +49,7 @@ let abortController: AbortController | null = null;
 async function runToolLoop(
   config: { baseUrl: string; apiKey: string; model: string },
   systemPrompt: string,
+  memoryMessages: { role: string; content: string }[],
   apiMessages: { role: string; content: string }[],
   maxTokens: number | undefined
 ): Promise<string | null> {
@@ -56,9 +65,10 @@ async function runToolLoop(
   // 每轮最大工具调用次数（记忆库配置；联网搜索复用同一上限）
   const maxToolCalls = Math.max(1, settings.memoryVaultConfig.maxToolCalls || 3);
 
-  // 构建对话消息（含 system）
+  // 构建对话消息（含 system + 近期日记）
   const messages: any[] = [
     { role: 'system', content: systemPrompt },
+    ...memoryMessages,
     ...apiMessages,
   ];
 
@@ -149,6 +159,8 @@ async function streamAssistantResponse(
   await insertMessage(conversationId, assistantMessage);
 
   const allMessages = get().messages;
+  // 隐藏楼层现在按对话独立存储，从 chat store 自身读取。
+  const hiddenRanges = get().hiddenRanges;
   // 先按 role 过滤并去掉刚创建的空 assistant 占位，再按隐藏区间过滤，
   // 全程保留 createdAt 以便推导相邻消息的时间间隔。
   const filtered = allMessages
@@ -156,7 +168,7 @@ async function streamAssistantResponse(
     .slice(0, -1)
     .filter((_, index) => {
       const msgNum = index + 1;
-      return !settings.hiddenRanges.some(
+      return !hiddenRanges.some(
         (r) => msgNum >= r.from && msgNum <= r.to
       );
     });
@@ -174,6 +186,26 @@ async function streamAssistantResponse(
 
   // 当前时间注入到 system prompt 的最前面（所有 prompt 之前）
   const systemPromptWithTime = `当前时间：${formatCurrentTime()}\n\n${settings.systemPrompt}`;
+
+  // 获取已收藏的日记作为「近期日记」，作为独立 system 消息插入到
+  // system prompt 之后、对话消息之前。
+  let memoryMessages: { role: string; content: string }[] = [];
+  try {
+    const favoriteDiaries = await getFavoriteDiaries();
+    if (favoriteDiaries.length > 0) {
+      const memoryContent = favoriteDiaries
+        .map((d) => {
+          const date = formatTimeMarker(d.createdAt);
+          return `【${date}】${d.title}\n${d.content}`;
+        })
+        .join('\n\n---\n\n');
+      memoryMessages = [
+        { role: 'system', content: `以下是你的近期日记：\n\n${memoryContent}` },
+      ];
+    }
+  } catch {
+    // 读取日记失败时静默忽略，不影响正常对话
+  }
 
   abortController = new AbortController();
 
@@ -203,6 +235,7 @@ async function streamAssistantResponse(
     const finalContent = await runToolLoop(
       { baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model },
       systemPromptWithTime,
+      memoryMessages,
       apiMessages,
       settings.maxOutputTokens || undefined
     );
@@ -217,6 +250,7 @@ async function streamAssistantResponse(
           model: config.model,
           messages: [
             { role: 'system', content: systemPromptWithTime },
+            ...memoryMessages,
             ...apiMessages,
           ],
           maxTokens: settings.maxOutputTokens || undefined,
@@ -251,6 +285,7 @@ async function streamAssistantResponse(
 export const useChatStore = create<ChatState>((set, get) => ({
   conversationId: null,
   messages: [],
+  hiddenRanges: [],
   isStreaming: false,
   error: null,
 
@@ -333,15 +368,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   newConversation: () => {
-    set({ conversationId: null, messages: [], error: null });
+    set({ conversationId: null, messages: [], hiddenRanges: [], error: null });
   },
 
   loadConversation: async (id: string) => {
     const messages = await getMessagesByConversation(id);
-    set({ conversationId: id, messages, error: null });
+    const hiddenRanges = await getHiddenRanges(id);
+    set({ conversationId: id, messages, hiddenRanges, error: null });
   },
 
   setError: (error) => set({ error }),
+
+  // 隐藏楼层：新增范围 → 合并 → 落库。无活跃对话时忽略。
+  addHiddenRange: async (range: HiddenRange) => {
+    const { conversationId, hiddenRanges } = get();
+    if (!conversationId) return;
+    const merged = mergeRanges([...hiddenRanges, range]);
+    set({ hiddenRanges: merged });
+    await updateHiddenRanges(conversationId, merged);
+  },
+
+  // 隐藏楼层：按索引删除某条范围 → 落库。
+  removeHiddenRange: async (index: number) => {
+    const { conversationId, hiddenRanges } = get();
+    if (!conversationId) return;
+    const next = hiddenRanges.filter((_, i) => i !== index);
+    set({ hiddenRanges: next });
+    await updateHiddenRanges(conversationId, next);
+  },
+
+  // 隐藏楼层：整组替换（合并后）→ 落库。
+  setHiddenRanges: async (ranges: HiddenRange[]) => {
+    const { conversationId } = get();
+    if (!conversationId) return;
+    const merged = mergeRanges(ranges);
+    set({ hiddenRanges: merged });
+    await updateHiddenRanges(conversationId, merged);
+  },
 
   editMessage: async (id: string, content: string) => {
     await updateMessageContent(id, content);

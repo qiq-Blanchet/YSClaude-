@@ -7,10 +7,8 @@ export interface NamedAPIConfig extends APIConfig {
   name: string;
 }
 
-export interface HiddenRange {
-  from: number;
-  to: number;
-}
+// HiddenRange 已迁移到 src/types，这里 re-export 保持旧的 import 路径兼容。
+export type { HiddenRange } from '../types';
 
 export interface TTSConfig {
   groupId: string;
@@ -42,7 +40,6 @@ interface SettingsState {
   activeConfigIndex: number;
   systemPrompt: string;
   systemPrompts: { name: string; content: string }[];
-  hiddenRanges: HiddenRange[];
   maxOutputTokens: number | null;
   ttsConfig: TTSConfig;
   memoryVaultConfig: MemoryVaultConfig;
@@ -53,9 +50,6 @@ interface SettingsState {
   removeAPIConfig: (index: number) => void;
   setSystemPrompt: (prompt: string) => void;
   setSystemPrompts: (prompts: { name: string; content: string }[]) => void;
-  setHiddenRanges: (ranges: HiddenRange[]) => void;
-  addHiddenRange: (range: HiddenRange) => void;
-  removeHiddenRange: (index: number) => void;
   setMaxOutputTokens: (tokens: number | null) => void;
   setTTSConfig: (config: Partial<TTSConfig>) => void;
   setMemoryVaultConfig: (config: Partial<MemoryVaultConfig>) => void;
@@ -72,7 +66,6 @@ export const useSettingsStore = create<SettingsState>()(
       systemPrompts: [
         { name: '默认', content: 'You are a helpful assistant.' },
       ],
-      hiddenRanges: [],
       maxOutputTokens: null,
       ttsConfig: {
         groupId: '',
@@ -121,13 +114,6 @@ export const useSettingsStore = create<SettingsState>()(
       setSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
       setSystemPrompts: (prompts) => set({ systemPrompts: prompts }),
 
-      setHiddenRanges: (ranges) => set({ hiddenRanges: ranges }),
-      addHiddenRange: (range) =>
-        set((state) => ({ hiddenRanges: [...state.hiddenRanges, range] })),
-      removeHiddenRange: (index) =>
-        set((state) => ({
-          hiddenRanges: state.hiddenRanges.filter((_, i) => i !== index),
-        })),
       setMaxOutputTokens: (tokens) => set({ maxOutputTokens: tokens }),
       setTTSConfig: (config) =>
         set((state) => ({ ttsConfig: { ...state.ttsConfig, ...config } })),
@@ -144,7 +130,6 @@ export const useSettingsStore = create<SettingsState>()(
         activeConfigIndex: state.activeConfigIndex,
         systemPrompt: state.systemPrompt,
         systemPrompts: state.systemPrompts,
-        hiddenRanges: state.hiddenRanges,
         maxOutputTokens: state.maxOutputTokens,
         ttsConfig: state.ttsConfig,
         memoryVaultConfig: state.memoryVaultConfig,

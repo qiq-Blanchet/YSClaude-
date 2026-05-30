@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { View, FlatList, Text, Pressable, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,7 +17,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
-  const { messages, isStreaming, error, addUserMessage, triggerResponse, stopStreaming } = useChatStore();
+  const { messages, hiddenRanges, isStreaming, error, addUserMessage, triggerResponse, stopStreaming } = useChatStore();
   const [showModelSelector, setShowModelSelector] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
 
@@ -28,6 +28,28 @@ export default function ChatScreen() {
       }, 100);
     }
   }, [messages]);
+
+  // 消息ID → 楼层号（仅 user/assistant，1-based），与 API 过滤/隐藏设置的编号口径一致
+  const floorMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let floor = 0;
+    for (const msg of messages) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        floor++;
+        map.set(msg.id, floor);
+      }
+    }
+    return map;
+  }, [messages]);
+
+  // 所有被隐藏的楼层号集合，渲染时 O(1) 判断
+  const hiddenFloorSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of hiddenRanges) {
+      for (let i = r.from; i <= r.to; i++) set.add(i);
+    }
+    return set;
+  }, [hiddenRanges]);
 
   // 页面主体内容。iOS 与 Android 共用，区别只在外层是否包 KeyboardAvoidingView。
   const content = (
@@ -62,11 +84,15 @@ export default function ChatScreen() {
           const prev = index > 0 ? messages[index - 1] : null;
           const showDivider =
             !prev || item.createdAt - prev.createdAt >= TIME_GAP_THRESHOLD_MS;
+          // 该消息对应的楼层号若落在隐藏区间内，则在界面上做淡化区分
+          const floor = floorMap.get(item.id);
+          const isHidden = floor !== undefined && hiddenFloorSet.has(floor);
           return (
             <>
               {showDivider && <TimeDivider timestamp={item.createdAt} />}
               <ChatBubble
                 message={item}
+                isHidden={isHidden}
                 isLastAssistant={
                   item.role === 'assistant' &&
                   index === messages.length - 1

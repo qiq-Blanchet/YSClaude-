@@ -20,9 +20,10 @@ const chatIcons = [
 interface Props {
   message: Message;
   isLastAssistant?: boolean;
+  isHidden?: boolean;
 }
 
-export function ChatBubble({ message, isLastAssistant }: Props) {
+export function ChatBubble({ message, isLastAssistant, isHidden }: Props) {
   const isUser = message.role === 'user';
   const { messages, editMessage, removeMessage, regenerate } = useChatStore();
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -91,14 +92,17 @@ export function ChatBubble({ message, isLastAssistant }: Props) {
     const menuTop = Math.max(8, menuAnchor.y - MENU_HEIGHT - 8);
 
     return (
-      <View style={styles.userRow}>
-        <Pressable
-          ref={bubbleRef}
-          onLongPress={handleUserLongPress}
-          style={styles.userBubble}
-        >
-          <Text style={styles.userText}>{message.content}</Text>
-        </Pressable>
+      <View style={[styles.userRow, isHidden && styles.hiddenRow]}>
+        <View style={styles.userColumn}>
+          {isHidden && <Text style={styles.hiddenLabelRight}>已隐藏</Text>}
+          <Pressable
+            ref={bubbleRef}
+            onLongPress={handleUserLongPress}
+            style={styles.userBubble}
+          >
+            <Text style={styles.userText}>{message.content}</Text>
+          </Pressable>
+        </View>
 
         {/* 长按操作菜单：用 Modal 渲染，全屏透明层捕获外部点击关闭，
             菜单按测量到的气泡坐标锚定在气泡正上方。 */}
@@ -180,7 +184,8 @@ export function ChatBubble({ message, isLastAssistant }: Props) {
   }
 
   return (
-    <View style={styles.assistantRow}>
+    <View style={[styles.assistantRow, isHidden && styles.hiddenBubble]}>
+      {isHidden && <Text style={styles.hiddenLabelLeft}>已隐藏</Text>}
       <View style={styles.assistantContent}>
         <Markdown style={markdownStyles}>{message.content || ' '}</Markdown>
       </View>
@@ -213,6 +218,30 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: 16,
     marginVertical: 8,
+  },
+  // 用户气泡列：让「已隐藏」标签右对齐于气泡上方
+  userColumn: {
+    alignItems: 'flex-end',
+    maxWidth: '75%',
+  },
+  // 已隐藏楼层：整体降低透明度作区分
+  hiddenRow: {
+    opacity: 0.4,
+  },
+  hiddenBubble: {
+    opacity: 0.4,
+  },
+  hiddenLabelRight: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginBottom: 3,
+    textAlign: 'right',
+  },
+  hiddenLabelLeft: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginBottom: 3,
+    textAlign: 'left',
   },
   // 长按菜单：全屏透明关闭层 + 锚定气泡上方的菜单
   menuDismissOverlay: {
@@ -253,7 +282,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    maxWidth: '75%',
   },
   userText: {
     fontSize: 16,

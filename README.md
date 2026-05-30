@@ -27,6 +27,10 @@
 - TTS 语音播放（MiniMax 语音合成，支持自定义 Voice ID）
 - System Prompt 自定义（自动在最前注入当前时间）
 - 消息隐藏（节省 token）
+  - 按对话独立保存，切换对话自动加载各自的隐藏范围
+  - 重叠或相邻范围自动合并（如 1-6 与 3-7 合并为 1-7）
+  - 填写起止楼层后实时预览该范围的首尾两条消息
+  - 已隐藏楼层在聊天界面降低透明度并标注「已隐藏」
 - AI 输出长度限制
 - 时间戳分隔（相邻消息间隔 ≥ 30 分钟时，聊天页插入居中小字时间，并同步告知 AI）
 - 日记系统
@@ -94,13 +98,15 @@ src/
 │   ├── api.ts              # 流式 API 调用（SSE）
 │   └── tts.ts              # MiniMax TTS 语音合成
 ├── utils/
-│   └── time.ts             # 时间格式化 + 消息间隔时间戳阈值
+│   ├── time.ts             # 时间格式化 + 消息间隔时间戳阈值
+│   └── ranges.ts           # 隐藏楼层范围合并（重叠/相邻自动合并）
 ├── stores/
-│   ├── chat.ts             # 对话状态 + 持久化
+│   ├── chat.ts             # 对话状态 + 隐藏楼层（按对话独立）+ 持久化
+│   ├── diary.ts            # 日记状态 + CRUD
 │   └── settings.ts         # 配置状态（zustand persist + sqlite）
 ├── db/
 │   ├── database.ts         # SQLite 初始化 + schema
-│   ├── operations.ts       # 对话/消息 CRUD
+│   ├── operations.ts       # 对话/消息/日记/隐藏楼层 CRUD
 │   └── kv-storage.ts       # KV 存储适配器
 ├── hooks/
 │   └── useKeyboardHeight.ts # 软键盘高度监听（edge-to-edge 输入框避让）
