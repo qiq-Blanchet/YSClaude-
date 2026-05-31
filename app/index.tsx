@@ -52,6 +52,16 @@ export default function ChatScreen() {
     return set;
   }, [hiddenRanges]);
 
+  // SDK 54+ 起 Android 强制开启 edge-to-edge：窗口绘制到键盘后面，
+  // adjustResize 不再缩小 RN 根视图，KeyboardAvoidingView 也常拿不到正确的
+  // 键盘高度 —— 所以输入框不被顶起。改为直接监听 Keyboard 事件，自己把悬浮
+  // 输入框上移 liftHeight 把它顶到键盘上方，最可靠、零原生改动。
+  //
+  // keyboardHeight 是从窗口底部算起的完整高度（edge-to-edge 下含手势条区域）。
+  // ChatInput 自身已经垫了 insets.bottom 的底部安全区，键盘弹起时这块被键盘
+  // 盖住，所以只需顶起「键盘高度 - 底部安全区」，避免顶过头。
+  const liftHeight = keyboardHeight > 0 ? Math.max(keyboardHeight - insets.bottom, 0) : 0;
+
   // 页面主体内容。iOS 与 Android 共用，区别只在外层是否包 KeyboardAvoidingView。
   const content = (
     <>
@@ -109,8 +119,9 @@ export default function ChatScreen() {
         ListEmptyComponent={<EmptyState />}
       />
 
-      {/* Input —— 悬浮在消息列表之上，两侧与下方留空隙可透出聊天内容 */}
-      <View style={styles.inputFloating} pointerEvents="box-none">
+      {/* Input —— 悬浮在消息列表之上，两侧与下方留空隙可透出聊天内容。
+          键盘弹起时整体上移 liftHeight（见下方说明），避免被键盘遮挡。 */}
+      <View style={[styles.inputFloating, { bottom: liftHeight }]} pointerEvents="box-none">
         <ChatInput
           onSend={addUserMessage}
           onTriggerResponse={triggerResponse}
@@ -127,18 +138,8 @@ export default function ChatScreen() {
     </>
   );
 
-  // SDK 54+ 起 Android 强制开启 edge-to-edge：窗口绘制到键盘后面，
-  // adjustResize 不再缩小 RN 根视图，KeyboardAvoidingView 也常拿不到正确的
-  // 键盘高度 —— 所以输入框不被顶起。改为直接监听 Keyboard 事件，自己给容器
-  // 底部加 paddingBottom 把内容顶上去，最可靠、零原生改动。
-  //
-  // keyboardHeight 是从窗口底部算起的完整高度（edge-to-edge 下含手势条区域）。
-  // ChatInput 自身已经垫了 insets.bottom 的底部安全区，键盘弹起时这块被键盘
-  // 盖住，所以容器只需顶起「键盘高度 - 底部安全区」，避免顶过头。
-  const liftHeight = keyboardHeight > 0 ? Math.max(keyboardHeight - insets.bottom, 0) : 0;
-
   return (
-    <View style={[styles.container, { paddingBottom: liftHeight }]}>
+    <View style={styles.container}>
       {content}
     </View>
   );

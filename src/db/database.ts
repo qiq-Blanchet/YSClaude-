@@ -1,13 +1,32 @@
 import * as SQLite from 'expo-sqlite';
 
 let db: SQLite.SQLiteDatabase | null = null;
+// 首次初始化的 in-flight Promise。多个并发调用者（如冷启动时同时触发的
+// 查询）共享同一个初始化过程，避免各自打开/建表造成竞态——这正是本地 APK
+// 冷启动首次进入历史列表查到空结果的根因。
+let initPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (!db) {
-    db = await SQLite.openDatabaseAsync('ysclaude.db');
-    await initTables(db);
+  if (db) return db;
+  if (initPromise) return initPromise;
+
+  // 把"打开 + 建表 + 迁移"整体作为一个不可分割的初始化过程缓存起来。
+  // 只有它完整 resolve 之后，db 才被赋值、后续查询才会执行——杜绝了
+  // "DB 刚 open、表/迁移尚未就绪就被查询"的时序竞态。
+  initPromise = (async () => {
+    const opened = await SQLite.openDatabaseAsync('ysclaude.db');
+    await initTables(opened);
+    db = opened;
+    return opened;
+  })();
+
+  try {
+    return await initPromise;
+  } catch (e) {
+    // 初始化失败则清空 in-flight Promise，允许下次重试，而不是永久卡死。
+    initPromise = null;
+    throw e;
   }
-  return db;
 }
 
 async function initTables(database: SQLite.SQLiteDatabase) {

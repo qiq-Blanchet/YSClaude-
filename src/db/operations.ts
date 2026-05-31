@@ -53,7 +53,7 @@ export async function getAllConversations(): Promise<Conversation[]> {
     created_at: number;
     updated_at: number;
     hidden_ranges: string | null;
-  }>('SELECT * FROM conversations ORDER BY updated_at DESC');
+  }>('SELECT * FROM conversations ORDER BY created_at DESC');
 
   return rows.map((row) => ({
     id: row.id,

@@ -96,7 +96,7 @@ export default function HistoryScreen() {
                 {item.title || '新对话'}
               </Text>
               <Text style={styles.itemMeta}>
-                {item.model} · {formatTime(item.updatedAt)}
+                {item.model} · {formatTime(item.createdAt)}
               </Text>
             </View>
             <Pressable style={styles.deleteButton} onPress={() => handleDelete(item)}>
