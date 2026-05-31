@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from 'expo/fetch';
 import { ToolDefinition } from './tools';
 
 interface ChatRequest {
@@ -89,7 +90,7 @@ export async function streamChat(
     body.max_tokens = maxTokens;
   }
 
-  const response = await fetch(url, {
+  const response = await expoFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

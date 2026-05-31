@@ -12,6 +12,7 @@ import { ModelSelector } from '../src/components/ModelSelector';
 import { TimeDivider } from '../src/components/TimeDivider';
 import { Message } from '../src/types';
 import { TIME_GAP_THRESHOLD_MS } from '../src/utils/time';
+import { pickGreeting } from '../src/utils/greetings';
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -144,10 +145,12 @@ export default function ChatScreen() {
 }
 
 function EmptyState() {
+  // 每次进入新对话页时随机抽一条欢迎语（通用池 + 当前时段池）
+  const greeting = useMemo(() => pickGreeting(), []);
   return (
     <View style={styles.emptyContainer}>
       <Image source={require('../assets/claudelogo.png')} style={styles.emptyLogo} resizeMode="contain" />
-      <Text style={styles.emptyText}>有什么我可以帮你的吗？</Text>
+      <Text style={styles.emptyText}>{greeting}</Text>
     </View>
   );
 }
@@ -221,15 +224,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 120,
+    paddingTop: 40,
   },
   emptyLogo: {
-    width: 64,
-    height: 64,
+    width: 48,
+    height: 48,
     marginBottom: 16,
   },
   emptyText: {
-    fontSize: 18,
-    color: colors.textSecondary,
+    fontSize: 22,
+    color: colors.text,
+    fontFamily: fonts.serifBold,
   },
 });

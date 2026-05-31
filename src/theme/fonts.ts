@@ -3,4 +3,5 @@ export const fonts = {
   bold: 'Sohne-Halbfett',
   mono: 'SohneMono-Buch',
   serif: 'TiemposText',
+  serifBold: 'TiemposText-Bold',
 };

@@ -291,7 +291,7 @@ export function ChatBubble({ message, isLastAssistant, isHidden }: Props) {
           <View style={styles.actions}>
             {chatIcons.map((icon, i) => (
               <Pressable key={i} style={styles.actionButton} onPress={() => handleAction(i)}>
-                <Image source={icon} style={styles.actionImage} />
+                <Image source={icon} style={styles.actionImage} resizeMode="contain" />
               </Pressable>
             ))}
           </View>
@@ -384,6 +384,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     lineHeight: 22,
+    fontFamily: fonts.serif,
   },
   assistantRow: {
     paddingHorizontal: 16,
@@ -453,7 +454,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    marginTop: 4,
+    marginTop: -4,
     gap: 2,
   },
   actionButton: {
@@ -521,16 +522,17 @@ const thinkingMarkdownStyles = StyleSheet.create({
 });
 
 const markdownStyles = StyleSheet.create({
-  body: { fontSize: 16, color: colors.text, lineHeight: 24 },
+  body: { fontSize: 16, color: colors.text, lineHeight: 24, fontFamily: fonts.serif },
   code_inline: {
     backgroundColor: colors.surface, color: colors.primary,
     paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, fontSize: 14, fontFamily: 'monospace',
   },
   fence: { backgroundColor: colors.codeBlock, borderRadius: 10, padding: 14, marginVertical: 10 },
   code_block: { color: colors.codeText, fontSize: 13, fontFamily: 'monospace' },
-  heading1: { fontSize: 22, fontWeight: '700', marginVertical: 8, color: colors.text },
-  heading2: { fontSize: 18, fontWeight: '600', marginVertical: 6, color: colors.text },
-  heading3: { fontSize: 16, fontWeight: '600', marginVertical: 4, color: colors.text },
+  heading1: { fontSize: 22, fontFamily: fonts.serifBold, marginVertical: 8, color: colors.text },
+  heading2: { fontSize: 18, fontFamily: fonts.serifBold, marginVertical: 6, color: colors.text },
+  heading3: { fontSize: 16, fontFamily: fonts.serifBold, marginVertical: 4, color: colors.text },
+  strong: { fontFamily: fonts.serifBold },
   blockquote: {
     borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 12, marginVertical: 8, opacity: 0.8,
   },

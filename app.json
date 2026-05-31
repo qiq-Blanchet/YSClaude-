@@ -32,10 +32,18 @@
             "./assets/Sohne-Buch.otf",
             "./assets/Sohne-Halbfett.otf",
             "./assets/SohneMono-Buch.otf",
-            "./assets/TiemposText.otf"
+            "./assets/TiemposText.otf",
+            "./assets/TiemposText-bold.otf"
           ]
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3660e22f-35ac-4218-bf72-6a6489d0faee"
+      }
+    },
+    "owner": "linwang_004"
   }
 }

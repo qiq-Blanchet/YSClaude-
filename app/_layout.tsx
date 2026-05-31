@@ -14,6 +14,7 @@ export default function RootLayout() {
     'Sohne-Bold': require('../assets/Sohne-Halbfett.otf'),
     'SohneMono': require('../assets/SohneMono-Buch.otf'),
     'TiemposText': require('../assets/TiemposText.otf'),
+    'TiemposText-Bold': require('../assets/TiemposText-bold.otf'),
   });
 
   useEffect(() => {
