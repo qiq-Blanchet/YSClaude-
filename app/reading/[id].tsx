@@ -31,6 +31,7 @@ import {
   updateReadingMessageContent,
 } from '../../src/db/operations';
 import { streamChat } from '../../src/services/api';
+import { notifyReplyReady } from '../../src/services/notifications';
 import { useSettingsStore } from '../../src/stores/settings';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -313,6 +314,9 @@ export default function ReadingBookScreen() {
       );
       await updateReadingMessageContent(assistantMessage.id, assistantContent);
       await updateReadingBook(book.id, { updatedAt: Date.now() });
+      if (assistantContent.trim()) {
+        notifyReplyReady(assistantContent).catch(() => {});
+      }
     } catch (err: any) {
       const message = err?.message || '请求失败';
       setError(message);

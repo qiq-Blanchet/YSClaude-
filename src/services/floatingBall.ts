@@ -6,6 +6,8 @@ interface FloatingBallModule {
   show: () => Promise<boolean>;
   hide: () => Promise<boolean>;
   isShowing: () => Promise<boolean>;
+  showMessage: (text: string) => Promise<boolean>;
+  hideMessage: () => Promise<boolean>;
 }
 
 const nativeModule = NativeModules.FloatingBall as FloatingBallModule | undefined;
@@ -38,4 +40,12 @@ export async function hideFloatingBall(): Promise<void> {
 
 export async function isFloatingBallShowing(): Promise<boolean> {
   return ensureFloatingBall().isShowing();
+}
+
+export async function showFloatingBallMessage(text: string): Promise<void> {
+  await ensureFloatingBall().showMessage(text);
+}
+
+export async function hideFloatingBallMessage(): Promise<void> {
+  await ensureFloatingBall().hideMessage();
 }

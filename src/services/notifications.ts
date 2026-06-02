@@ -1,5 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
+import { useSettingsStore } from '../stores/settings';
+import { hideFloatingBallMessage, showFloatingBallMessage } from './floatingBall';
 
 // ─── 前后台状态追踪 ───────────────────────────────────────────
 let currentAppState: AppStateStatus = AppState.currentState;
@@ -10,6 +12,9 @@ let currentAppState: AppStateStatus = AppState.currentState;
 export function startAppStateListener(): () => void {
   const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
     currentAppState = next;
+    if (next === 'active') {
+      hideFloatingBallMessage().catch(() => {});
+    }
   });
   return () => sub.remove();
 }
@@ -92,6 +97,12 @@ export async function notifyReplyReady(replyText: string): Promise<void> {
       trimmed.length > BODY_MAX_LENGTH
         ? trimmed.slice(0, BODY_MAX_LENGTH) + '…'
         : trimmed;
+
+    if (useSettingsStore.getState().floatingBallConfig.enabled) {
+      showFloatingBallMessage(body).catch(() => {});
+    }
+
+    if (!(await ensurePermission())) return;
 
     await Notifications.scheduleNotificationAsync({
       content: {
