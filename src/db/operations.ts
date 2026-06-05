@@ -16,6 +16,7 @@ import {
   FocusSession,
   FocusTimerMode,
   FocusSessionStatus,
+  ToolCall,
 } from '../types';
 
 interface MessageRow {
@@ -219,14 +220,24 @@ export async function deleteMessage(id: string): Promise<void> {
   await db.runAsync('DELETE FROM messages WHERE id = ?', [id]);
 }
 
+function parseJsonArray<T>(raw: string | null | undefined): T[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as T[] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function mapMessageRow(row: MessageRow): Message {
   return {
     id: row.id,
     role: row.role as Message['role'],
     content: row.content,
-    toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
+    toolCalls: parseJsonArray<ToolCall>(row.tool_calls),
     toolCallId: row.tool_call_id || undefined,
-    toolInvocations: row.tool_invocations ? JSON.parse(row.tool_invocations) : undefined,
+    toolInvocations: parseJsonArray<ToolInvocation>(row.tool_invocations),
     imageUri: row.image_uri || undefined,
     createdAt: row.created_at,
   };
@@ -740,9 +751,19 @@ export async function deleteReadingBook(id: string): Promise<void> {
       updatedAt: Date.now(),
     });
   }
-  await db.execAsync('PRAGMA foreign_keys = OFF;');
-  await db.runAsync('DELETE FROM reading_messages WHERE book_id = ?', [id]);
-  await db.runAsync('DELETE FROM reading_books WHERE id = ?', [id]);
+  const foreignKeyRow = await db.getFirstAsync<{ foreign_keys: number }>('PRAGMA foreign_keys');
+  const shouldRestoreForeignKeys = foreignKeyRow?.foreign_keys === 1;
+  if (shouldRestoreForeignKeys) {
+    await db.execAsync('PRAGMA foreign_keys = OFF;');
+  }
+  try {
+    await db.runAsync('DELETE FROM reading_messages WHERE book_id = ?', [id]);
+    await db.runAsync('DELETE FROM reading_books WHERE id = ?', [id]);
+  } finally {
+    if (shouldRestoreForeignKeys) {
+      await db.execAsync('PRAGMA foreign_keys = ON;');
+    }
+  }
 }
 
 async function ensureReadingBookSnapshotTable() {

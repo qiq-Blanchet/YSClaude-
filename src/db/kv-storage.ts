@@ -1,6 +1,8 @@
 import * as SQLite from 'expo-sqlite';
 import { StateStorage } from 'zustand/middleware';
 
+export const KV_DATABASE_NAME = 'ysclaude_kv.db';
+
 let kvDb: SQLite.SQLiteDatabase | null = null;
 // 与 database.ts 的 getDatabase() 同理：缓存 in-flight Promise，
 // 防止冷启动时多个并发调用者各自 openDatabaseAsync 导致竞态——
@@ -13,7 +15,7 @@ async function getKVDb(): Promise<SQLite.SQLiteDatabase> {
   if (kvInitPromise) return kvInitPromise;
 
   kvInitPromise = (async () => {
-    const opened = await SQLite.openDatabaseAsync('ysclaude_kv.db');
+    const opened = await SQLite.openDatabaseAsync(KV_DATABASE_NAME);
     await opened.execAsync(
       `CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
     );
@@ -27,6 +29,22 @@ async function getKVDb(): Promise<SQLite.SQLiteDatabase> {
     kvInitPromise = null;
     throw e;
   }
+}
+
+export async function serializeKVDatabase(): Promise<Uint8Array> {
+  const db = await getKVDb();
+  return await db.serializeAsync();
+}
+
+export async function closeKVDatabaseConnection(): Promise<string | null> {
+  const opened = kvDb || (kvInitPromise ? await kvInitPromise.catch(() => null) : null);
+  const databasePath = opened?.databasePath ?? null;
+  if (opened) {
+    await opened.closeAsync();
+  }
+  kvDb = null;
+  kvInitPromise = null;
+  return databasePath;
 }
 
 export const sqliteStorage: StateStorage = {

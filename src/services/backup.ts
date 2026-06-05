@@ -3,13 +3,18 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { unzipSync, zipSync } from 'fflate';
 import { closeDatabaseConnection, getDatabase } from '../db/database';
+import {
+  closeKVDatabaseConnection,
+  KV_DATABASE_NAME,
+  serializeKVDatabase,
+} from '../db/kv-storage';
 import { stopTTS } from './tts';
 import { useChatStore } from '../stores/chat';
 import { useGameStore } from '../stores/game';
 import { useMusicStore } from '../stores/music';
 import { useRadioStore } from '../stores/radio';
 
-const BACKUP_FORMAT_VERSION = 1;
+const BACKUP_FORMAT_VERSION = 2;
 const DATABASE_NAME = 'ysclaude.db';
 const BACKUP_ROOT_DIR = 'backups';
 const BACKUP_FILE_DIRS = [
@@ -31,6 +36,7 @@ export interface BackupManifest {
   createdAt: string;
   appVersion: string;
   database: string;
+  databases?: string[];
   files: string[];
 }
 
@@ -46,6 +52,7 @@ export interface PickedBackup {
   manifest: BackupManifest;
   entries: ZipEntries;
   databaseBytes: Uint8Array;
+  kvDatabaseBytes?: Uint8Array;
 }
 
 export interface RestoreResult {
@@ -88,6 +95,7 @@ function createManifest(includedDirs: string[]): BackupManifest {
     createdAt: new Date().toISOString(),
     appVersion: appVersion(),
     database: DATABASE_NAME,
+    databases: [DATABASE_NAME, KV_DATABASE_NAME],
     files: includedDirs,
   };
 }
@@ -121,8 +129,10 @@ async function collectDirectoryRecursive(
 async function createBackupPackage(fileName?: string): Promise<BackupExportResult> {
   const db = await getDatabase();
   const databaseBytes = await db.serializeAsync();
+  const kvDatabaseBytes = await serializeKVDatabase();
   const entries: ZipEntries = {
     [`database/${DATABASE_NAME}`]: databaseBytes,
+    [`database/${KV_DATABASE_NAME}`]: kvDatabaseBytes,
   };
   const includedDirs = new Set<string>();
 
@@ -176,32 +186,54 @@ export async function pickBackupFile(): Promise<PickedBackup | null> {
   const entries = unzipSync(bytes);
   const manifestBytes = entries['manifest.json'];
   const databaseBytes = entries[`database/${DATABASE_NAME}`];
+  const kvDatabaseBytes = entries[`database/${KV_DATABASE_NAME}`];
 
   if (!manifestBytes || !databaseBytes) {
     throw new Error('这不是有效的 YSClaude 备份包：缺少 manifest 或数据库。');
   }
 
   const manifest = JSON.parse(decodeText(manifestBytes)) as BackupManifest;
-  validateManifest(manifest, databaseBytes);
+  validateManifest(manifest, databaseBytes, kvDatabaseBytes);
 
   return {
     fileName: picked.result.name,
     manifest,
     entries,
     databaseBytes,
+    kvDatabaseBytes,
   };
 }
 
-function validateManifest(manifest: BackupManifest, databaseBytes: Uint8Array): void {
+function validateManifest(
+  manifest: BackupManifest,
+  databaseBytes: Uint8Array,
+  kvDatabaseBytes?: Uint8Array
+): void {
   if (manifest.app !== 'YSClaude') {
     throw new Error('这不是 YSClaude 的备份包。');
   }
-  if (manifest.backupFormat !== BACKUP_FORMAT_VERSION) {
+  if (
+    !Number.isInteger(manifest.backupFormat) ||
+    manifest.backupFormat < 1 ||
+    manifest.backupFormat > BACKUP_FORMAT_VERSION
+  ) {
     throw new Error(`暂不支持备份格式版本 ${manifest.backupFormat}。`);
   }
-  const sqliteHeader = decodeText(databaseBytes.slice(0, 16));
+  validateSqliteDatabase(databaseBytes, '主数据库');
+  if (manifest.backupFormat >= 2) {
+    if (!kvDatabaseBytes) {
+      throw new Error('这不是有效的 YSClaude 备份包：缺少设置数据库。');
+    }
+    validateSqliteDatabase(kvDatabaseBytes, '设置数据库');
+  } else if (kvDatabaseBytes) {
+    validateSqliteDatabase(kvDatabaseBytes, '设置数据库');
+  }
+}
+
+function validateSqliteDatabase(bytes: Uint8Array, label: string): void {
+  const sqliteHeader = decodeText(bytes.slice(0, 16));
   if (!sqliteHeader.startsWith('SQLite format 3')) {
-    throw new Error('备份包里的数据库文件无效。');
+    throw new Error(`备份包里的${label}文件无效。`);
   }
 }
 
@@ -225,15 +257,17 @@ export async function restoreBackup(backup: PickedBackup): Promise<RestoreResult
   const snapshot = await createBackupPackage(`ysclaude-before-restore-${formatBackupStamp()}.zip`);
   const db = await getDatabase();
   const databasePath = db.databasePath;
+  const kvDatabasePath = await closeKVDatabaseConnection();
   await closeDatabaseConnection();
 
-  const databaseFile = new File(fileUriFromNativePath(databasePath));
-  if (!databaseFile.exists) {
-    databaseFile.create({ intermediates: true, overwrite: true });
+  if (backup.kvDatabaseBytes && !kvDatabasePath) {
+    throw new Error('无法定位设置数据库文件，未执行恢复。');
   }
-  databaseFile.write(backup.databaseBytes);
-  deleteFileIfExists(`${databaseFile.uri}-wal`);
-  deleteFileIfExists(`${databaseFile.uri}-shm`);
+
+  writeDatabaseFile(databasePath, backup.databaseBytes);
+  if (backup.kvDatabaseBytes && kvDatabasePath) {
+    writeDatabaseFile(kvDatabasePath, backup.kvDatabaseBytes);
+  }
 
   restoreDocumentFiles(backup.entries);
 
@@ -241,6 +275,16 @@ export async function restoreBackup(backup: PickedBackup): Promise<RestoreResult
     manifest: backup.manifest,
     localSnapshotUri: snapshot.uri,
   };
+}
+
+function writeDatabaseFile(nativePath: string, bytes: Uint8Array): void {
+  const databaseFile = new File(fileUriFromNativePath(nativePath));
+  if (!databaseFile.exists) {
+    databaseFile.create({ intermediates: true, overwrite: true });
+  }
+  databaseFile.write(bytes);
+  deleteFileIfExists(`${databaseFile.uri}-wal`);
+  deleteFileIfExists(`${databaseFile.uri}-shm`);
 }
 
 function deleteFileIfExists(uri: string): void {
