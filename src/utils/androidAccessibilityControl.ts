@@ -1,5 +1,6 @@
 export const ANDROID_ACCESSIBILITY_CONTROL_MARKER = '[ANDROID_ACCESSIBILITY_CONTROL_SESSION]';
 export const ANDROID_ACCESSIBILITY_CAPTURE_NOTICE_PREFIX = 'Accessibility mode: captured screen from';
+export const ANDROID_SCREENSHOT_CAPTURE_NOTICE_PREFIX = 'Screen share mode: captured screenshot';
 
 interface AccessibilityNodeLike {
   id?: string;
@@ -200,10 +201,14 @@ export function buildAndroidAccessibilityRuntimeContext(
     'You may use Android accessibility tools to observe, click, or swipe if the user asks for action.',
     'Do not estimate tap coordinates from the screenshot. Coordinate taps are often wrong on Android screenshots.',
     'First choose from the Interactive elements list and call click_android_node with that id.',
+    'For visible editable/input elements, use set_android_text with the node id to replace field text.',
+    'After tapping/clicking an input field and focusing it, use set_focused_android_text to write into the current focused field.',
+    'If an input is visible but missing from the accessibility tree, tap it first, then try ime_commit_android_text through YSClaude IME.',
+    'If ime_commit_android_text says YSClaude IME is not active, ask the user to enable/switch to YSClaude IME; use open_android_input_method_settings or show_android_input_method_picker only to help the user do that.',
     'If the target is visible but missing from the accessibility tree, use tap_android_relative with x_ratio/y_ratio from 0 to 1.',
     'Use tap_android_screen absolute pixels only as the final fallback. Do not convert screenshot pixels yourself.',
     'Prefer scroll_android_node for scrollable nodes; use swipe_android_screen when node scrolling fails.',
-    'Before sensitive actions such as sending, deleting, paying, granting permissions, calling, or publishing, ask the user for confirmation.',
+    'Before sensitive actions such as deleting, paying, granting permissions, calling, or publishing, ask the user for confirmation. Sending ordinary chat text does not require extra permission when the user asked you to send it.',
     '',
     'Interactive elements to use for clicks or scrolling:',
     interactiveElements,
@@ -213,6 +218,14 @@ export function buildAndroidAccessibilityRuntimeContext(
   ].join('\n');
 }
 
+export function buildAndroidScreenshotRuntimeContext(): string {
+  return '用户邀请你共享屏幕，请根据附带截图和对话上下文回应。';
+}
+
 export function buildAndroidAccessibilityCaptureNotice(activePackage: string): string {
   return `${ANDROID_ACCESSIBILITY_CAPTURE_NOTICE_PREFIX} ${activePackage || 'current app'}`;
+}
+
+export function buildAndroidScreenshotCaptureNotice(): string {
+  return ANDROID_SCREENSHOT_CAPTURE_NOTICE_PREFIX;
 }

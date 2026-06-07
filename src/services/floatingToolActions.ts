@@ -15,8 +15,14 @@ import {
   isAccessibilityControlEnabled,
   openAccessibilitySettings,
 } from './nativeTools';
-import { capturePendingAndroidAccessibilityContext } from './androidAccessibilitySession';
-import { buildAndroidAccessibilityCaptureNotice } from '../utils/androidAccessibilityControl';
+import {
+  capturePendingAndroidAccessibilityContext,
+  capturePendingAndroidScreenshotContext,
+} from './androidAccessibilitySession';
+import {
+  buildAndroidAccessibilityCaptureNotice,
+  buildAndroidScreenshotCaptureNotice,
+} from '../utils/androidAccessibilityControl';
 
 let actionBusy = false;
 
@@ -70,6 +76,33 @@ async function handleScreenShare(): Promise<void> {
     return;
   }
 
+  const context = await capturePendingAndroidScreenshotContext();
+  if (!context.imageUri) {
+    showFloatingBallMessage('Screen capture cancelled', { speak: false }).catch(() => {});
+    return;
+  }
+
+  await ensureLatestCreatedConversationLoaded();
+  await useChatStore
+    .getState()
+    .addSystemMessage(buildAndroidScreenshotCaptureNotice());
+  if (useSettingsStore.getState().floatingBallConfig.autoReplyOnScreenshotShare) {
+    showFloatingBallMessage('Screenshot shared, getting reply...', { speak: false }).catch(() => {});
+    await useChatStore.getState().triggerResponse();
+    return;
+  }
+
+  showFloatingBallMessage('Screenshot shared for next reply', { speak: false }).catch(() => {});
+}
+
+async function handleScreenControlShare(): Promise<void> {
+  const accessibilityEnabled = await isAccessibilityControlEnabled();
+  if (!accessibilityEnabled) {
+    showFloatingBallMessage('Enable YSClaude accessibility service first', { speak: false }).catch(() => {});
+    await openAccessibilitySettings();
+    return;
+  }
+
   const context = await capturePendingAndroidAccessibilityContext();
   await ensureLatestCreatedConversationLoaded();
   await useChatStore
@@ -114,6 +147,9 @@ export async function handleFloatingBallToolAction(action: FloatingBallToolActio
     switch (actionName) {
       case 'screen_share':
         await handleScreenShare();
+        break;
+      case 'screen_control':
+        await handleScreenControlShare();
         break;
       case 'text_input':
         await handleTextInput(typeof action === 'string' ? undefined : action.text);

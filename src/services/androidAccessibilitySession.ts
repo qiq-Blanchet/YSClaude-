@@ -7,6 +7,7 @@ export interface PendingAndroidAccessibilityContext {
   interactiveElements: string;
   activePackage: string;
   capturedAt: number;
+  controlEnabled: boolean;
 }
 
 let pendingContext: PendingAndroidAccessibilityContext | null = null;
@@ -32,6 +33,24 @@ export async function capturePendingAndroidAccessibilityContext(): Promise<Pendi
     interactiveElements: typeof context.interactiveElements === 'string' ? context.interactiveElements : '',
     activePackage: readActivePackage(context.screen),
     capturedAt: Date.now(),
+    controlEnabled: true,
+  };
+  pendingContext = nextContext;
+  return nextContext;
+}
+
+export async function capturePendingAndroidScreenshotContext(): Promise<PendingAndroidAccessibilityContext> {
+  const contextText = await readAccessibilityScreenContext({ includeFullTree: false });
+  const context = JSON.parse(contextText) as {
+    imageUri?: string | null;
+  };
+  const nextContext: PendingAndroidAccessibilityContext = {
+    imageUri: context.imageUri || null,
+    screenSummary: '',
+    interactiveElements: '',
+    activePackage: '',
+    capturedAt: Date.now(),
+    controlEnabled: false,
   };
   pendingContext = nextContext;
   return nextContext;

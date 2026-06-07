@@ -1,16 +1,23 @@
 import {
   clickAccessibilityNode,
+  commitInputMethodText,
   createCalendarEvent,
+  deleteInputMethodText,
   deleteCalendarEvent,
   listCalendarEvents,
   openAccessibilitySettings,
+  openInputMethodSettings,
   openUsageAccessSettings,
   performAccessibilityGlobalAction,
+  performInputMethodAction,
   readAccessibilityScreenContext,
   readAppUsageStats,
   readBatteryStatus,
   readDeviceInfo,
   scrollAccessibilityNode,
+  setAccessibilityNodeText,
+  setFocusedAccessibilityText,
+  showInputMethodPicker,
   swipeAccessibilityScreen,
   tapAccessibilityScreen,
   tapAccessibilityScreenRelative,
@@ -67,6 +74,24 @@ const OPEN_ACCESSIBILITY_SETTINGS_TOOL: ToolDefinition = {
   function: {
     name: 'open_android_accessibility_settings',
     description: 'Open Android Accessibility settings when the YSClaude accessibility service is not enabled and the user needs to grant permission.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+};
+
+const OPEN_INPUT_METHOD_SETTINGS_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'open_android_input_method_settings',
+    description: 'Open Android keyboard/input method settings so the user can enable YSClaude IME. Use this when IME text entry reports that YSClaude IME is not active or not enabled.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+};
+
+const SHOW_INPUT_METHOD_PICKER_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'show_android_input_method_picker',
+    description: 'Show the Android input method picker so the user can switch the current keyboard to YSClaude IME. Use after the user has enabled YSClaude IME in system settings.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
 };
@@ -158,6 +183,83 @@ const SCROLL_ANDROID_NODE_TOOL: ToolDefinition = {
         direction: { type: 'string', enum: ['forward', 'backward', 'up', 'down', 'left', 'right'], description: 'Scroll direction.' },
       },
       required: ['node_id'],
+    },
+  },
+};
+
+const SET_ANDROID_TEXT_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'set_android_text',
+    description: 'Set text in an Android editable field by accessibility node id. Use after observe_android_screen returns an input/editable node, or a nearby container around the input. This replaces the field content; pass an empty string to clear. Do not use for passwords, verification codes, payment, banking, or publishing/sending content unless the user explicitly asked.',
+    parameters: {
+      type: 'object',
+      properties: {
+        node_id: { type: 'string', description: 'Accessibility node id from observe_android_screen, for example w0.2.1. Prefer nodes with flags containing edit.' },
+        text: { type: 'string', description: 'Text to place into the input field. Replaces current field content.' },
+      },
+      required: ['node_id', 'text'],
+    },
+  },
+};
+
+const SET_FOCUSED_ANDROID_TEXT_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'set_focused_android_text',
+    description: 'Set text in the currently focused Android input field. Use this after clicking/tapping an input field and the system keyboard or text focus is active. This replaces the field content; pass an empty string to clear. Do not use for passwords, verification codes, payment, banking, or publishing/sending content unless the user explicitly asked.',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Text to place into the focused input field. Replaces current field content.' },
+      },
+      required: ['text'],
+    },
+  },
+};
+
+const IME_COMMIT_ANDROID_TEXT_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'ime_commit_android_text',
+    description: 'Commit text to the current focused input through YSClaude IME. Use this after tapping/clicking an input field and when YSClaude IME is active. This does not require an accessibility input node and works better for apps like WeChat whose input boxes are not exposed. Do not use for passwords, verification codes, payment, banking, or publishing/sending content unless the user explicitly asked.',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Text to insert at the current cursor through YSClaude IME.' },
+      },
+      required: ['text'],
+    },
+  },
+};
+
+const IME_ANDROID_ACTION_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'ime_android_action',
+    description: 'Perform an editor action through YSClaude IME, such as send, search, done, go, or next. This can send or submit content in many apps, so only use when the user explicitly asked to send/search/submit.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['send', 'search', 'done', 'go', 'next'] },
+      },
+      required: ['action'],
+    },
+  },
+};
+
+const IME_DELETE_ANDROID_TEXT_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'ime_delete_android_text',
+    description: 'Delete text around the current cursor through YSClaude IME. Use for small corrections only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        before_length: { type: 'number', description: 'Number of characters before cursor to delete. Defaults to 1.' },
+        after_length: { type: 'number', description: 'Number of characters after cursor to delete. Defaults to 0.' },
+      },
+      required: [],
     },
   },
 };
@@ -262,6 +364,13 @@ export const nativeDeviceTool: ToolModule = {
     calendar_create_event: '创建日程',
     calendar_update_event: '修改日程',
     calendar_delete_event: '删除日程',
+    set_android_text: '输入 Android 文本',
+    set_focused_android_text: '输入焦点文本',
+    open_android_input_method_settings: '打开输入法设置',
+    show_android_input_method_picker: '切换输入法',
+    ime_commit_android_text: 'IME 输入文本',
+    ime_android_action: 'IME 执行动作',
+    ime_delete_android_text: 'IME 删除文本',
   },
   getDefinitions: (config) => {
     const tools: ToolDefinition[] = [];
@@ -277,12 +386,19 @@ export const nativeDeviceTool: ToolModule = {
     if (config.nativeTools?.accessibilityControlEnabled) {
       tools.push(
         OPEN_ACCESSIBILITY_SETTINGS_TOOL,
+        OPEN_INPUT_METHOD_SETTINGS_TOOL,
+        SHOW_INPUT_METHOD_PICKER_TOOL,
         OBSERVE_ANDROID_SCREEN_TOOL,
         TAP_ANDROID_SCREEN_TOOL,
         TAP_ANDROID_RELATIVE_TOOL,
         SWIPE_ANDROID_SCREEN_TOOL,
         CLICK_ANDROID_NODE_TOOL,
         SCROLL_ANDROID_NODE_TOOL,
+        SET_ANDROID_TEXT_TOOL,
+        SET_FOCUSED_ANDROID_TEXT_TOOL,
+        IME_COMMIT_ANDROID_TEXT_TOOL,
+        IME_ANDROID_ACTION_TOOL,
+        IME_DELETE_ANDROID_TEXT_TOOL,
         ANDROID_GLOBAL_ACTION_TOOL
       );
     }
@@ -308,6 +424,10 @@ export const nativeDeviceTool: ToolModule = {
         return await openUsageAccessSettings();
       case 'open_android_accessibility_settings':
         return await openAccessibilitySettings();
+      case 'open_android_input_method_settings':
+        return await openInputMethodSettings();
+      case 'show_android_input_method_picker':
+        return await showInputMethodPicker();
       case 'observe_android_screen':
         return await readAccessibilityScreenContext();
       case 'tap_android_screen':
@@ -320,6 +440,16 @@ export const nativeDeviceTool: ToolModule = {
         return await clickAccessibilityNode(args);
       case 'scroll_android_node':
         return await scrollAccessibilityNode(args);
+      case 'set_android_text':
+        return await setAccessibilityNodeText(args);
+      case 'set_focused_android_text':
+        return await setFocusedAccessibilityText(args);
+      case 'ime_commit_android_text':
+        return await commitInputMethodText(args);
+      case 'ime_android_action':
+        return await performInputMethodAction(args);
+      case 'ime_delete_android_text':
+        return await deleteInputMethodText(args);
       case 'android_global_action':
         return await performAccessibilityGlobalAction(args);
       case 'calendar_list_events':

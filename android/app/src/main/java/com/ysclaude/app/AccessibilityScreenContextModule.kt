@@ -1,7 +1,9 @@
 package com.ysclaude.app
 
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -24,6 +26,26 @@ class AccessibilityScreenContextModule(
   @ReactMethod
   fun isAccessibilityServiceEnabled(promise: Promise) {
     promise.resolve(FloatingAccessibilityService.isRunning())
+  }
+
+  @ReactMethod
+  fun openInputMethodSettings(promise: Promise) {
+    val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    reactContext.startActivity(intent)
+    promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun showInputMethodPicker(promise: Promise) {
+    val manager = reactContext.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    manager.showInputMethodPicker()
+    promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun isInputMethodReady(promise: Promise) {
+    promise.resolve(YSClaudeInputMethodService.isReady())
   }
 
   @ReactMethod
@@ -89,6 +111,45 @@ class AccessibilityScreenContextModule(
         .onSuccess { action -> promise.resolve(actionToMap(action)) }
         .onFailure { error -> promise.reject("ACCESSIBILITY_SCROLL_NODE_FAILED", error) }
     }
+  }
+
+  @ReactMethod
+  fun setNodeText(nodeId: String, text: String, promise: Promise) {
+    FloatingAccessibilityService.setNodeText(nodeId, text) { result ->
+      result
+        .onSuccess { action -> promise.resolve(actionToMap(action)) }
+        .onFailure { error -> promise.reject("ACCESSIBILITY_SET_NODE_TEXT_FAILED", error) }
+    }
+  }
+
+  @ReactMethod
+  fun setFocusedText(text: String, promise: Promise) {
+    FloatingAccessibilityService.setFocusedText(text) { result ->
+      result
+        .onSuccess { action -> promise.resolve(actionToMap(action)) }
+        .onFailure { error -> promise.reject("ACCESSIBILITY_SET_FOCUSED_TEXT_FAILED", error) }
+    }
+  }
+
+  @ReactMethod
+  fun commitInputMethodText(text: String, promise: Promise) {
+    val (success, message) = YSClaudeInputMethodService.commitText(text)
+    promise.resolve(actionToMap(FloatingAccessibilityService.ActionResult(success, message, null)))
+  }
+
+  @ReactMethod
+  fun performInputMethodAction(action: String, promise: Promise) {
+    val (success, message) = YSClaudeInputMethodService.performEditorAction(action)
+    promise.resolve(actionToMap(FloatingAccessibilityService.ActionResult(success, message, null)))
+  }
+
+  @ReactMethod
+  fun deleteInputMethodText(beforeLength: Double, afterLength: Double, promise: Promise) {
+    val (success, message) = YSClaudeInputMethodService.deleteSurroundingText(
+      beforeLength.toInt(),
+      afterLength.toInt()
+    )
+    promise.resolve(actionToMap(FloatingAccessibilityService.ActionResult(success, message, null)))
   }
 
   @ReactMethod

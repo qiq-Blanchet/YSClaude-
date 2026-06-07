@@ -40,6 +40,12 @@
       </intent-filter>
       <meta-data android:name="android.accessibilityservice" android:resource="@xml/ysclaude_accessibility_service"/>
     </service>
+    <service android:name=".YSClaudeInputMethodService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true">
+      <intent-filter>
+        <action android:name="android.view.InputMethod"/>
+      </intent-filter>
+      <meta-data android:name="android.view.im" android:resource="@xml/ysclaude_input_method"/>
+    </service>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

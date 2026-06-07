@@ -1557,6 +1557,22 @@ function FloatingBallTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           thumbColor="#FFFFFF"
         />
       </View>
+
+      <View style={styles.switchRow}>
+        <View style={styles.nativeToolText}>
+          <Text style={styles.label}>截图后自动获取回复</Text>
+          <Text style={styles.hint}>仅影响点按截图共享；长按截图+节点树模式仍等待手动获取回复</Text>
+        </View>
+        <Switch
+          value={!!floatingBallConfig.autoReplyOnScreenshotShare}
+          onValueChange={(value) => {
+            setFloatingBallConfig({ autoReplyOnScreenshotShare: value });
+            showToast(value ? '截图自动回复已开启' : '截图自动回复已关闭');
+          }}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
     </ScrollView>
   );
 }

@@ -7,6 +7,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -181,6 +182,117 @@ class FloatingAccessibilityService : AccessibilityService() {
     }
   }
 
+  private fun canSetText(node: AccessibilityNodeInfo): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2 && node.isEditable) return true
+    return node.actionList.any { action -> action.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
+  }
+
+  private fun findFirstTextTarget(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
+    if (canSetText(node)) return AccessibilityNodeInfo.obtain(node)
+    if (depth >= MAX_TEXT_TARGET_SEARCH_DEPTH) return null
+
+    for (index in 0 until node.childCount) {
+      val child = node.getChild(index) ?: continue
+      try {
+        val target = findFirstTextTarget(child, depth + 1)
+        if (target != null) return target
+      } finally {
+        child.recycle()
+      }
+    }
+
+    return null
+  }
+
+  private fun runSetNodeText(path: String, text: String): ActionResult {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+      return ActionResult(false, "Setting text requires Android 5.0 or newer", collectNodeTree())
+    }
+    if (text.length > MAX_SET_TEXT_CHARS) {
+      return ActionResult(false, "Text is too long: ${text.length} > $MAX_SET_TEXT_CHARS", collectNodeTree())
+    }
+
+    val node = findNodeByPath(path)
+      ?: return ActionResult(false, "Node not found: $path", collectNodeTree())
+
+    var target: AccessibilityNodeInfo? = null
+    return try {
+      target = findFirstTextTarget(node)
+      val textTarget = target
+        ?: return ActionResult(false, "No editable text target found under node: $path", collectNodeTree())
+
+      textTarget.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+      val args = Bundle().apply {
+        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+      }
+      val success = textTarget.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+      ActionResult(
+        success,
+        if (success) {
+          "Text set on ${textTarget.className ?: path}"
+        } else {
+          "Text target rejected ACTION_SET_TEXT: $path"
+        },
+        collectNodeTree()
+      )
+    } finally {
+      target?.recycle()
+      node.recycle()
+    }
+  }
+
+  private fun findFocusedInputTarget(): AccessibilityNodeInfo? {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      for (window in windows) {
+        val root = window.root ?: continue
+        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused != null) return focused
+      }
+    }
+
+    val root = rootInActiveWindow ?: return null
+    return root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+  }
+
+  private fun runSetFocusedText(text: String): ActionResult {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+      return ActionResult(false, "Setting text requires Android 5.0 or newer", collectNodeTree())
+    }
+    if (text.length > MAX_SET_TEXT_CHARS) {
+      return ActionResult(false, "Text is too long: ${text.length} > $MAX_SET_TEXT_CHARS", collectNodeTree())
+    }
+
+    val focused = findFocusedInputTarget()
+      ?: return ActionResult(false, "No focused input field found", collectNodeTree())
+
+    var target: AccessibilityNodeInfo? = null
+    return try {
+      target = if (canSetText(focused)) focused else findFirstTextTarget(focused)
+      val textTarget = target
+      if (textTarget == null) {
+        ActionResult(false, "Focused node does not accept ACTION_SET_TEXT", collectNodeTree())
+      } else {
+        val args = Bundle().apply {
+          putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        val success = textTarget.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        ActionResult(
+          success,
+          if (success) {
+            "Text set on focused ${textTarget.className ?: "input"}"
+          } else {
+            "Focused input rejected ACTION_SET_TEXT"
+          },
+          collectNodeTree()
+        )
+      }
+    } finally {
+      if (target != null && target !== focused) target?.recycle()
+      focused.recycle()
+    }
+  }
+
   private fun collectNodeTreeOrNull(): String? {
     return runCatching { collectNodeTree() }.getOrNull()
   }
@@ -320,6 +432,8 @@ class FloatingAccessibilityService : AccessibilityService() {
   companion object {
     private const val MAX_NODE_DEPTH = 12
     private const val MAX_NODE_COUNT = 320
+    private const val MAX_TEXT_TARGET_SEARCH_DEPTH = 5
+    private const val MAX_SET_TEXT_CHARS = 4000
     private const val GESTURE_TIMEOUT_MS = 2800L
 
     @Volatile
@@ -405,6 +519,28 @@ class FloatingAccessibilityService : AccessibilityService() {
       }
       service.mainHandler.post {
         callback(Result.success(service.runNodeAction(path, action)))
+      }
+    }
+
+    fun setNodeText(path: String, text: String, callback: (Result<ActionResult>) -> Unit) {
+      val service = instance
+      if (service == null) {
+        callback(Result.failure(IllegalStateException("Please enable the YSClaude accessibility service first")))
+        return
+      }
+      service.mainHandler.post {
+        callback(Result.success(service.runSetNodeText(path, text)))
+      }
+    }
+
+    fun setFocusedText(text: String, callback: (Result<ActionResult>) -> Unit) {
+      val service = instance
+      if (service == null) {
+        callback(Result.failure(IllegalStateException("Please enable the YSClaude accessibility service first")))
+        return
+      }
+      service.mainHandler.post {
+        callback(Result.success(service.runSetFocusedText(text)))
       }
     }
 

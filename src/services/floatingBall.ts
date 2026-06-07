@@ -9,6 +9,7 @@ interface FloatingBallModule {
   hide: () => Promise<boolean>;
   isShowing: () => Promise<boolean>;
   showMessage: (text: string) => Promise<boolean>;
+  enqueueMessageSequence?: (messages: string[], intervalMs: number, reset: boolean) => Promise<boolean>;
   hideMessage: () => Promise<boolean>;
   showDesktopLyric: (
     text: string,
@@ -47,6 +48,7 @@ interface FloatingBallMessageOptions {
 
 export type FloatingBallToolAction =
   | 'screen_share'
+  | 'screen_control'
   | 'get_reply'
   | 'toggle_music'
   | 'open_app'
@@ -101,6 +103,21 @@ export async function showFloatingBallMessage(
   if (options.speak !== false) {
     playFloatingBallTTS(text);
   }
+}
+
+export async function enqueueFloatingBallMessageSequence(
+  messages: string[],
+  intervalMs: number,
+  reset = false
+): Promise<void> {
+  const floatingBall = ensureFloatingBall();
+  if (!floatingBall.enqueueMessageSequence) {
+    for (const message of messages) {
+      await floatingBall.showMessage(message);
+    }
+    return;
+  }
+  await floatingBall.enqueueMessageSequence(messages, intervalMs, reset);
 }
 
 export async function hideFloatingBallMessage(): Promise<void> {

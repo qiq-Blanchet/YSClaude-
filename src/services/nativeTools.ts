@@ -76,7 +76,10 @@ const AndroidSystemTools = NativeModules.AndroidSystemTools as
 const AccessibilityScreenContext = NativeModules.AccessibilityScreenContext as
   | {
       openAccessibilitySettings: () => Promise<boolean>;
+      openInputMethodSettings: () => Promise<boolean>;
+      showInputMethodPicker: () => Promise<boolean>;
       isAccessibilityServiceEnabled: () => Promise<boolean>;
+      isInputMethodReady: () => Promise<boolean>;
       captureScreenContext: () => Promise<{ imageUri?: string | null; nodeTree: string }>;
       tap: (x: number, y: number) => Promise<AccessibilityActionResult>;
       tapRelative: (xRatio: number, yRatio: number) => Promise<AccessibilityActionResult>;
@@ -89,6 +92,11 @@ const AccessibilityScreenContext = NativeModules.AccessibilityScreenContext as
       ) => Promise<AccessibilityActionResult>;
       clickNode: (nodeId: string) => Promise<AccessibilityActionResult>;
       scrollNode: (nodeId: string, direction: string) => Promise<AccessibilityActionResult>;
+      setNodeText: (nodeId: string, text: string) => Promise<AccessibilityActionResult>;
+      setFocusedText: (text: string) => Promise<AccessibilityActionResult>;
+      commitInputMethodText: (text: string) => Promise<AccessibilityActionResult>;
+      performInputMethodAction: (action: string) => Promise<AccessibilityActionResult>;
+      deleteInputMethodText: (beforeLength: number, afterLength: number) => Promise<AccessibilityActionResult>;
       performGlobalAction: (action: string) => Promise<AccessibilityActionResult>;
     }
   | undefined;
@@ -279,6 +287,18 @@ export async function openAccessibilitySettings(): Promise<string> {
   return toJson({ opened: true, target: 'accessibility_settings' });
 }
 
+export async function openInputMethodSettings(): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  await module.openInputMethodSettings();
+  return toJson({ opened: true, target: 'input_method_settings' });
+}
+
+export async function showInputMethodPicker(): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  await module.showInputMethodPicker();
+  return toJson({ opened: true, target: 'input_method_picker' });
+}
+
 export async function readAccessibilityScreenContext(options: { includeFullTree?: boolean } = {}): Promise<string> {
   const module = ensureAccessibilityScreenContext();
   const context = await module.captureScreenContext();
@@ -297,6 +317,11 @@ export async function readAccessibilityScreenContext(options: { includeFullTree?
 export async function isAccessibilityControlEnabled(): Promise<boolean> {
   const module = ensureAccessibilityScreenContext();
   return await module.isAccessibilityServiceEnabled();
+}
+
+export async function isInputMethodReady(): Promise<boolean> {
+  const module = ensureAccessibilityScreenContext();
+  return await module.isInputMethodReady();
 }
 
 export async function tapAccessibilityScreen(args: Record<string, any>): Promise<string> {
@@ -352,6 +377,50 @@ export async function scrollAccessibilityNode(args: Record<string, any>): Promis
   if (!nodeId) throw new Error('Missing node_id');
   const direction = String(getArg(args, 'direction') || 'forward');
   const result = await withAccessibilityTimeout(module.scrollNode(nodeId, direction), 'scroll_android_node');
+  return formatAccessibilityAction(result);
+}
+
+export async function setAccessibilityNodeText(args: Record<string, any>): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  const nodeId = String(getArg(args, 'node_id', 'nodeId', 'id') || '').trim();
+  if (!nodeId) throw new Error('Missing node_id');
+  const textValue = getArg(args, 'text', 'value', 'content');
+  if (typeof textValue !== 'string') throw new Error('Missing text');
+  const result = await withAccessibilityTimeout(module.setNodeText(nodeId, textValue), 'set_android_text');
+  return formatAccessibilityAction(result);
+}
+
+export async function setFocusedAccessibilityText(args: Record<string, any>): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  const textValue = getArg(args, 'text', 'value', 'content');
+  if (typeof textValue !== 'string') throw new Error('Missing text');
+  const result = await withAccessibilityTimeout(module.setFocusedText(textValue), 'set_focused_android_text');
+  return formatAccessibilityAction(result);
+}
+
+export async function commitInputMethodText(args: Record<string, any>): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  const textValue = getArg(args, 'text', 'value', 'content');
+  if (typeof textValue !== 'string') throw new Error('Missing text');
+  const result = await withAccessibilityTimeout(module.commitInputMethodText(textValue), 'ime_commit_android_text');
+  return formatAccessibilityAction(result);
+}
+
+export async function performInputMethodAction(args: Record<string, any>): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  const action = String(getArg(args, 'action') || 'send');
+  const result = await withAccessibilityTimeout(module.performInputMethodAction(action), 'ime_android_action');
+  return formatAccessibilityAction(result);
+}
+
+export async function deleteInputMethodText(args: Record<string, any>): Promise<string> {
+  const module = ensureAccessibilityScreenContext();
+  const beforeLength = asNumber(getArg(args, 'before_length', 'beforeLength'), 1);
+  const afterLength = asNumber(getArg(args, 'after_length', 'afterLength'), 0);
+  const result = await withAccessibilityTimeout(
+    module.deleteInputMethodText(beforeLength, afterLength),
+    'ime_delete_android_text'
+  );
   return formatAccessibilityAction(result);
 }
 

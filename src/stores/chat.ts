@@ -8,7 +8,7 @@ import { useSettingsStore } from './settings';
 import { getToolDefinitions, executeTool, getToolLabel } from '../services/tools';
 import { observeActiveWebView } from '../services/webviewController';
 import { formatWebViewObservation } from '../services/toolModules/webView';
-import { showFloatingBallMessage } from '../services/floatingBall';
+import { enqueueFloatingBallMessageSequence, showFloatingBallMessage } from '../services/floatingBall';
 import { playTTSAndWait, stopTTS } from '../services/tts';
 import { formatCurrentTime, formatFullTime, formatTimeMarker, TIME_GAP_THRESHOLD_MS } from '../utils/time';
 import { mergeRanges, subtractRange } from '../utils/ranges';
@@ -25,7 +25,9 @@ import { buildPeriodSystemPrompt } from '../utils/periods';
 import {
   ANDROID_ACCESSIBILITY_CAPTURE_NOTICE_PREFIX,
   ANDROID_ACCESSIBILITY_CONTROL_MARKER,
+  ANDROID_SCREENSHOT_CAPTURE_NOTICE_PREFIX,
   buildAndroidAccessibilityRuntimeContext,
+  buildAndroidScreenshotRuntimeContext,
 } from '../utils/androidAccessibilityControl';
 import { consumePendingAndroidAccessibilityContext } from '../services/androidAccessibilitySession';
 import {
@@ -56,6 +58,7 @@ const FLOATING_STREAM_HARD_BOUNDARIES = '。！？!?；;\n';
 const FLOATING_STREAM_SOFT_BOUNDARIES = '，,、';
 const FLOATING_STREAM_MIN_SOFT_SEGMENT_CHARS = 18;
 const FLOATING_STREAM_MAX_SEGMENT_CHARS = 72;
+const FLOATING_VISUAL_SEGMENT_INTERVAL_MS = 2000;
 
 interface ChatState {
   conversationId: string | null;
@@ -162,14 +165,6 @@ function extractFloatingSpeechSegment(buffer: string, force: boolean): { segment
   return null;
 }
 
-function estimateSilentReadingDelay(text: string): number {
-  return Math.min(5200, Math.max(1000, text.length * 140));
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function createFloatingStreamBridge() {
   const bridgeId = ++floatingSpeechBridgeId;
   let buffer = '';
@@ -183,6 +178,16 @@ function createFloatingStreamBridge() {
   };
 
   const isCurrent = () => !cancelled && floatingSpeechBridgeId === bridgeId;
+  const isTTSEnabled = () => !!useSettingsStore.getState().floatingBallConfig.ttsEnabled;
+
+  const enqueueVisualSegment = (rawSegment: string) => {
+    const segment = stripFloatingStreamNoise(rawSegment);
+    if (!segment) return;
+    enqueueFloatingBallMessageSequence(
+      [clipFloatingStreamText(segment)],
+      FLOATING_VISUAL_SEGMENT_INTERVAL_MS
+    ).catch(() => {});
+  };
 
   const enqueue = (rawSegment: string) => {
     const segment = stripFloatingStreamNoise(rawSegment);
@@ -203,20 +208,30 @@ function createFloatingStreamBridge() {
     }
   };
 
+  const drainVisualBuffer = (force = false) => {
+    while (isCurrent()) {
+      const next = extractFloatingSpeechSegment(buffer, force);
+      if (!next) break;
+      buffer = next.rest;
+      enqueueVisualSegment(next.segment);
+      if (!force) break;
+    }
+  };
+
   const playNext = async () => {
     if (playing || !isCurrent()) return;
     const segment = queue.shift();
     if (!segment) return;
 
     playing = true;
-    show(clipFloatingStreamText(segment));
 
     try {
       const { floatingBallConfig, ttsConfig } = useSettingsStore.getState();
       if (floatingBallConfig.ttsEnabled) {
+        show(clipFloatingStreamText(segment));
         await playTTSAndWait(segment, ttsConfig);
       } else {
-        await delay(estimateSilentReadingDelay(segment));
+        drainVisualBuffer(false);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'TTS 播放失败';
@@ -234,17 +249,27 @@ function createFloatingStreamBridge() {
     cancelled = true;
     queue.length = 0;
     buffer = '';
+    enqueueFloatingBallMessageSequence([], FLOATING_VISUAL_SEGMENT_INTERVAL_MS, true).catch(() => {});
     stopTTS().catch(() => {});
   };
 
   return {
     start() {
       stopTTS().catch(() => {});
+      buffer = '';
       show('正在思考...');
     },
     append(token: string) {
       if (!isCurrent()) return;
       buffer += token;
+      if (!isTTSEnabled()) {
+        queue.length = 0;
+        if (playing) {
+          stopTTS().catch(() => {});
+        }
+        drainVisualBuffer(false);
+        return;
+      }
       drainBuffer(false);
     },
     tool(name: string, status: 'running' | 'done') {
@@ -260,6 +285,10 @@ function createFloatingStreamBridge() {
     close() {
       if (closed || !isCurrent()) return;
       closed = true;
+      if (!isTTSEnabled()) {
+        drainVisualBuffer(true);
+        return;
+      }
       drainBuffer(true);
     },
   };
@@ -648,12 +677,16 @@ async function runToolLoop(
       return true;
     }
 
-    // 将 assistant 的 tool_calls 消息追加到上下文
-    messages.push({
+    // 将 assistant 的 tool_calls 消息追加到上下文。部分 OpenAI 兼容服务不接受
+    // tool_calls 消息携带空字符串 content，因此只有模型真的输出文本时才传 content。
+    const assistantToolMessage: any = {
       role: 'assistant',
-      content: message.content || '',
       tool_calls: toolCalls,
-    });
+    };
+    if (message.content) {
+      assistantToolMessage.content = message.content;
+    }
+    messages.push(assistantToolMessage);
 
     // 依次执行每个工具调用，结果作为 tool message 追加
     for (const tc of toolCalls) {
@@ -814,7 +847,7 @@ async function streamAssistantResponse(
     runtimeSections.push(WEB_CRUISE_SYSTEM_PROMPT);
   }
 
-  if (pendingAndroidContext) {
+  if (pendingAndroidContext?.controlEnabled) {
     runtimeSections.push(
       buildAndroidAccessibilityRuntimeContext(
         pendingAndroidContext.screenSummary,
@@ -822,6 +855,8 @@ async function streamAssistantResponse(
         pendingAndroidContext.activePackage
       )
     );
+  } else if (pendingAndroidContext) {
+    runtimeSections.push(buildAndroidScreenshotRuntimeContext());
   }
 
   const radioContext = buildRadioRuntimeContext(historyMessages);
@@ -868,7 +903,10 @@ async function streamAssistantResponse(
   const shouldUseSyntheticAccessibilityRequest =
     !!pendingAndroidContext &&
     lastHistoryMessage?.role === 'system' &&
-    lastHistoryMessage.content.startsWith(ANDROID_ACCESSIBILITY_CAPTURE_NOTICE_PREFIX);
+    (
+      lastHistoryMessage.content.startsWith(ANDROID_ACCESSIBILITY_CAPTURE_NOTICE_PREFIX) ||
+      lastHistoryMessage.content.startsWith(ANDROID_SCREENSHOT_CAPTURE_NOTICE_PREFIX)
+    );
 
   const suffixMessages: ChatMessage[] = shouldUseSyntheticAccessibilityRequest
     ? [{ role: 'user', content: runtimeContext }]

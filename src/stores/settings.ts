@@ -134,6 +134,7 @@ export interface ReadingConfig {
 export interface FloatingBallConfig {
   enabled: boolean;
   ttsEnabled: boolean;
+  autoReplyOnScreenshotShare?: boolean;
 }
 
 export interface PeriodConfig {
@@ -442,6 +443,7 @@ export const useSettingsStore = create<SettingsState>()(
       floatingBallConfig: {
         enabled: false,
         ttsEnabled: false,
+        autoReplyOnScreenshotShare: false,
       },
       periodConfig: {
         sendToAI: false,

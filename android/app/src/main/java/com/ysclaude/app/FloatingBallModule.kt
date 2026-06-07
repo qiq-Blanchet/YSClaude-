@@ -45,6 +45,7 @@ import android.widget.TextView
 import com.bumptech.glide.Glide
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -84,6 +85,9 @@ class FloatingBallModule(
   private var ballView: ImageView? = null
   private var bubbleView: TextView? = null
   private var bubbleParams: WindowManager.LayoutParams? = null
+  private val messageSequenceQueue = ArrayDeque<String>()
+  private var messageSequenceIntervalMs = 2000L
+  private var messageSequenceScheduled = false
   private var desktopLyricView: DesktopLyricCardView? = null
   private var desktopLyricParams: WindowManager.LayoutParams? = null
   private var inputView: LinearLayout? = null
@@ -124,6 +128,21 @@ class FloatingBallModule(
 
   private val hideMessageRunnable = Runnable {
     hideMessageInternal()
+  }
+
+  private val messageSequenceRunnable = object : Runnable {
+    override fun run() {
+      messageSequenceScheduled = false
+      val next = messageSequenceQueue.removeFirstOrNull()
+      if (next == null) {
+        return
+      }
+      showMessageInternal(next, fromSequence = true)
+      if (messageSequenceQueue.isNotEmpty()) {
+        messageSequenceScheduled = true
+        mainHandler.postDelayed(this, messageSequenceIntervalMs)
+      }
+    }
   }
 
   private val randomStateRunnable = object : Runnable {
@@ -197,6 +216,7 @@ class FloatingBallModule(
   fun showMessage(text: String, promise: Promise) {
     mainHandler.post {
       try {
+        stopMessageSequence()
         showMessageInternal(text)
         promise.resolve(true)
       } catch (error: Exception) {
@@ -206,9 +226,32 @@ class FloatingBallModule(
   }
 
   @ReactMethod
+  fun enqueueMessageSequence(messages: ReadableArray, intervalMs: Double, reset: Boolean, promise: Promise) {
+    mainHandler.post {
+      try {
+        if (reset) {
+          stopMessageSequence()
+        }
+        messageSequenceIntervalMs = intervalMs.toLong().coerceAtLeast(250L)
+        for (index in 0 until messages.size()) {
+          val text = messages.getString(index)?.trim().orEmpty()
+          if (text.isNotBlank()) {
+            messageSequenceQueue.addLast(text)
+          }
+        }
+        scheduleMessageSequence()
+        promise.resolve(true)
+      } catch (error: Exception) {
+        promise.reject("ENQUEUE_FLOATING_MESSAGE_SEQUENCE_FAILED", error)
+      }
+    }
+  }
+
+  @ReactMethod
   fun hideMessage(promise: Promise) {
     mainHandler.post {
       try {
+        stopMessageSequence()
         hideMessageInternal()
         promise.resolve(true)
       } catch (error: Exception) {
@@ -401,6 +444,12 @@ class FloatingBallModule(
           visibility = View.GONE
           setOnClickListener {
             handleToolAction(action)
+          }
+          if (action == ACTION_SCREEN_SHARE) {
+            setOnLongClickListener {
+              handleToolAction(ACTION_SCREEN_CONTROL)
+              true
+            }
           }
         }
       }
@@ -805,7 +854,7 @@ class FloatingBallModule(
     }
   }
 
-  private fun showMessageInternal(rawText: String) {
+  private fun showMessageInternal(rawText: String, fromSequence: Boolean = false) {
     if (rootView == null || layoutParams == null || isExpanded) return
     val text = normalizeMessageText(rawText)
     if (text.isBlank()) return
@@ -841,6 +890,9 @@ class FloatingBallModule(
     updateMessagePosition()
     mainHandler.removeCallbacks(hideMessageRunnable)
     mainHandler.postDelayed(hideMessageRunnable, 7200)
+    if (!fromSequence) {
+      stopMessageSequence()
+    }
   }
 
   private fun hideMessageInternal() {
@@ -852,6 +904,19 @@ class FloatingBallModule(
     }
     bubbleView = null
     bubbleParams = null
+  }
+
+  private fun scheduleMessageSequence() {
+    if (!messageSequenceScheduled && messageSequenceQueue.isNotEmpty()) {
+      messageSequenceScheduled = true
+      mainHandler.postDelayed(messageSequenceRunnable, messageSequenceIntervalMs)
+    }
+  }
+
+  private fun stopMessageSequence() {
+    mainHandler.removeCallbacks(messageSequenceRunnable)
+    messageSequenceScheduled = false
+    messageSequenceQueue.clear()
   }
 
   private fun showDesktopLyricInternal(
@@ -1170,6 +1235,7 @@ class FloatingBallModule(
     private const val TOOL_ACTION_EVENT = "FloatingBallToolAction"
     private const val DESKTOP_LYRIC_ACTION_EVENT = "DesktopLyricAction"
     private const val ACTION_SCREEN_SHARE = "screen_share"
+    private const val ACTION_SCREEN_CONTROL = "screen_control"
     private const val ACTION_TEXT_INPUT = "text_input"
     private const val ACTION_GET_REPLY = "get_reply"
     private const val ACTION_TOGGLE_MUSIC = "toggle_music"
