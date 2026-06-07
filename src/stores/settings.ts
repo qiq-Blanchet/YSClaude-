@@ -13,6 +13,7 @@ export type ChatInputIconKey =
   | 'stop';
 
 export type ChatInputAppearanceStyle = 'default' | 'glass';
+export type AssistantBubbleAppearanceStyle = 'plain' | 'bubble';
 
 export interface AppearanceThemeSnapshot {
   topBarIconUris: Partial<Record<TopBarIconKey, string>>;
@@ -23,6 +24,13 @@ export interface AppearanceThemeSnapshot {
   userBubbleTransparent?: boolean;
   userBubbleRadius?: number;
   userBubbleBlurIntensity?: number;
+  userBubbleWidthPercent?: number;
+  assistantBubbleStyle?: AssistantBubbleAppearanceStyle;
+  assistantBubbleColor?: string;
+  assistantBubbleTransparent?: boolean;
+  assistantBubbleRadius?: number;
+  assistantBubbleBlurIntensity?: number;
+  assistantBubbleWidthPercent?: number;
   messageAvatarsVisible?: boolean;
   messageMetaVisible?: boolean;
   userAvatarImageUri?: string;
@@ -31,6 +39,7 @@ export interface AppearanceThemeSnapshot {
   userDisplayName?: string;
   assistantDisplayName?: string;
   assistantFooterHidden?: boolean;
+  assistantActionsHidden?: boolean;
   assistantFooterColor?: string;
   userTextColor?: string;
   assistantTextColor?: string;
@@ -256,6 +265,10 @@ const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = {
   messageAvatarRadius: 18,
   userDisplayName: 'You',
   assistantDisplayName: 'Claude',
+  assistantBubbleStyle: 'plain',
+  userBubbleWidthPercent: 75,
+  assistantBubbleWidthPercent: 75,
+  assistantActionsHidden: false,
   inputIconUris: {},
   inputStyle: 'default',
   inputBlurIntensity: 72,
@@ -287,6 +300,13 @@ function snapshotAppearanceConfig(config?: AppearanceConfig): AppearanceThemeSna
     userBubbleTransparent: source.userBubbleTransparent,
     userBubbleRadius: source.userBubbleRadius,
     userBubbleBlurIntensity: source.userBubbleBlurIntensity,
+    userBubbleWidthPercent: source.userBubbleWidthPercent,
+    assistantBubbleStyle: source.assistantBubbleStyle,
+    assistantBubbleColor: source.assistantBubbleColor,
+    assistantBubbleTransparent: source.assistantBubbleTransparent,
+    assistantBubbleRadius: source.assistantBubbleRadius,
+    assistantBubbleBlurIntensity: source.assistantBubbleBlurIntensity,
+    assistantBubbleWidthPercent: source.assistantBubbleWidthPercent,
     messageAvatarsVisible: source.messageAvatarsVisible,
     messageMetaVisible: source.messageMetaVisible,
     userAvatarImageUri: source.userAvatarImageUri,
@@ -295,6 +315,7 @@ function snapshotAppearanceConfig(config?: AppearanceConfig): AppearanceThemeSna
     userDisplayName: source.userDisplayName,
     assistantDisplayName: source.assistantDisplayName,
     assistantFooterHidden: source.assistantFooterHidden,
+    assistantActionsHidden: source.assistantActionsHidden,
     assistantFooterColor: source.assistantFooterColor,
     userTextColor: source.userTextColor,
     assistantTextColor: source.assistantTextColor,

@@ -34,6 +34,10 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
+function percentWidth(value: number): `${number}%` {
+  return `${value}%`;
+}
+
 const markdownRules = {
   table: (node: any, children: React.ReactNode, _parent: any, styles: any) => (
     <ScrollView
@@ -165,7 +169,15 @@ export const ChatBubble = React.memo(function ChatBubble({
   const userBubbleTransparent = !!appearanceConfig?.userBubbleTransparent;
   const userBubbleRadius = numberOrDefault(appearanceConfig?.userBubbleRadius, 20, 0, 36);
   const userBubbleBlurIntensity = numberOrDefault(appearanceConfig?.userBubbleBlurIntensity, 0, 0, 100);
+  const userBubbleWidthPercent = numberOrDefault(appearanceConfig?.userBubbleWidthPercent, 75, 45, 100);
+  const assistantBubbleStyle = appearanceConfig?.assistantBubbleStyle || 'plain';
+  const assistantBubbleColor = appearanceConfig?.assistantBubbleColor || colors.userBubble;
+  const assistantBubbleTransparent = !!appearanceConfig?.assistantBubbleTransparent;
+  const assistantBubbleRadius = numberOrDefault(appearanceConfig?.assistantBubbleRadius, 20, 0, 36);
+  const assistantBubbleBlurIntensity = numberOrDefault(appearanceConfig?.assistantBubbleBlurIntensity, 0, 0, 100);
+  const assistantBubbleWidthPercent = numberOrDefault(appearanceConfig?.assistantBubbleWidthPercent, 75, 45, 100);
   const assistantFooterHidden = !!appearanceConfig?.assistantFooterHidden;
+  const assistantActionsHidden = !!appearanceConfig?.assistantActionsHidden;
   const assistantFooterColor = appearanceConfig?.assistantFooterColor || colors.textTertiary;
   const userFontSize = numberOrDefault(appearanceConfig?.userFontSize, 16, 12, 24);
   const assistantFontSize = numberOrDefault(appearanceConfig?.assistantFontSize, 16, 12, 24);
@@ -211,8 +223,9 @@ export const ChatBubble = React.memo(function ChatBubble({
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
   // 用户气泡长按浮出的操作菜单是否显示
   const [menuVisible, setMenuVisible] = useState(false);
+  const [assistantMenuVisible, setAssistantMenuVisible] = useState(false);
   // 长按时测量得到的气泡屏幕坐标，用于把菜单锚定到气泡上方
-  const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0, width: 0 });
+  const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const [expandedTools, setExpandedTools] = useState<Record<number, boolean>>({});
   const bubbleRef = useRef<View>(null);
   const floorText = floorNumber !== undefined ? `#${floorNumber}` : null;
@@ -274,8 +287,8 @@ export const ChatBubble = React.memo(function ChatBubble({
 
   function handleUserLongPress() {
     // 测量气泡在屏幕中的位置，再据此定位菜单
-    bubbleRef.current?.measureInWindow((x, y, width) => {
-      setMenuAnchor({ x, y, width });
+    bubbleRef.current?.measureInWindow((x, y, width, height) => {
+      setMenuAnchor({ x, y, width, height });
       setMenuVisible(true);
     });
   }
@@ -344,7 +357,7 @@ export const ChatBubble = React.memo(function ChatBubble({
 
     return (
       <View style={[styles.userRow, isHidden && styles.hiddenRow]}>
-        <View style={styles.userColumn}>
+        <View style={[styles.userColumn, { maxWidth: percentWidth(userBubbleWidthPercent) }]}>
           {avatarHeader}
           {floorLabel && <Text style={styles.floorLabelRight}>{floorLabel}</Text>}
           {isHidden && <Text style={styles.hiddenLabelRight}>已隐藏</Text>}
@@ -472,6 +485,18 @@ export const ChatBubble = React.memo(function ChatBubble({
     }
   }
 
+  function handleAssistantLongPress() {
+    bubbleRef.current?.measureInWindow((x, y, width, height) => {
+      setMenuAnchor({ x, y, width, height });
+      setAssistantMenuVisible(true);
+    });
+  }
+
+  function handleAssistantMenuAction(index: number) {
+    setAssistantMenuVisible(false);
+    handleAction(index);
+  }
+
   function handleSaveEdit() {
     if (editTargetId && editText.trim()) {
       editMessage(editTargetId, editText.trim());
@@ -479,6 +504,32 @@ export const ChatBubble = React.memo(function ChatBubble({
     setEditModalVisible(false);
     setEditTargetId(null);
   }
+
+  const assistantBubbleEnabled = assistantBubbleStyle === 'bubble';
+  const shouldBlurAssistantBubble = assistantBubbleEnabled && !messageIsStickerOnly && assistantBubbleBlurIntensity > 0;
+  const assistantContentStyle = assistantBubbleEnabled
+    ? [
+        styles.assistantBubble,
+        {
+          maxWidth: percentWidth(assistantBubbleWidthPercent),
+          backgroundColor: assistantBubbleTransparent
+            ? 'transparent'
+            : shouldBlurAssistantBubble
+              ? withAlpha(assistantBubbleColor, 0.22)
+              : assistantBubbleColor,
+          borderRadius: assistantBubbleRadius,
+        },
+        shouldBlurAssistantBubble && styles.userBubbleGlass,
+        messageHasSticker && styles.userBubbleWithSticker,
+        messageIsStickerOnly && styles.userStickerOnlyBubble,
+      ]
+    : styles.assistantContent;
+  const ASSISTANT_MENU_WIDTH = 292;
+  const assistantMenuLeft = Math.min(
+    Math.max(8, menuAnchor.x),
+    SCREEN_WIDTH - ASSISTANT_MENU_WIDTH - 8
+  );
+  const assistantMenuTop = Math.max(8, menuAnchor.y + menuAnchor.height + 8);
 
   return (
     <View style={[styles.assistantRow, isHidden && styles.hiddenBubble]}>
@@ -524,7 +575,22 @@ export const ChatBubble = React.memo(function ChatBubble({
       )}
       {/* 思维链：<thinking> 包裹的内容拆出，正文只渲染剩余部分 */}
       {thinking.length > 0 && <ThinkingBlock thinking={thinking} />}
-      <Pressable style={styles.assistantContent} onPress={onBubblePress}>
+      <Pressable
+        ref={bubbleRef}
+        style={assistantContentStyle}
+        onPress={onBubblePress}
+        onLongPress={handleAssistantLongPress}
+      >
+        {shouldBlurAssistantBubble && (
+          <BlurView
+            blurTarget={blurTarget}
+            blurMethod="dimezisBlurView"
+            blurReductionFactor={1}
+            intensity={assistantBubbleBlurIntensity}
+            tint={assistantBubbleTransparent ? 'default' : colors.background === '#12100D' ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
         <StickerContent
           content={body || ' '}
           variant="assistant"
@@ -533,15 +599,51 @@ export const ChatBubble = React.memo(function ChatBubble({
           stickers={messageStickers}
         />
       </Pressable>
+      <Modal
+        transparent
+        visible={assistantMenuVisible}
+        animationType="fade"
+        onRequestClose={() => setAssistantMenuVisible(false)}
+      >
+        <Pressable style={styles.menuDismissOverlay} onPress={() => setAssistantMenuVisible(false)}>
+          <View style={[styles.bubbleMenu, styles.assistantActionMenu, { left: assistantMenuLeft, top: assistantMenuTop }]}>
+            <Pressable style={[styles.bubbleMenuItem, styles.assistantActionMenuItem]} onPress={() => handleAssistantMenuAction(0)}>
+              <Text style={styles.bubbleMenuText}>编辑</Text>
+            </Pressable>
+            <View style={styles.bubbleMenuDivider} />
+            <Pressable style={[styles.bubbleMenuItem, styles.assistantActionMenuItem]} onPress={() => handleAssistantMenuAction(1)}>
+              <Text style={[styles.bubbleMenuText, styles.bubbleMenuTextDanger]}>删除</Text>
+            </Pressable>
+            <View style={styles.bubbleMenuDivider} />
+            <Pressable style={[styles.bubbleMenuItem, styles.assistantActionMenuItem]} onPress={() => handleAssistantMenuAction(2)}>
+              <Text style={styles.bubbleMenuText}>语音播放</Text>
+            </Pressable>
+            <View style={styles.bubbleMenuDivider} />
+            <Pressable
+              style={[
+                styles.bubbleMenuItem,
+                styles.assistantActionMenuItem,
+                !isLastAssistant && styles.bubbleMenuItemDisabled,
+              ]}
+              onPress={() => handleAssistantMenuAction(5)}
+              disabled={!isLastAssistant}
+            >
+              <Text style={[styles.bubbleMenuText, !isLastAssistant && styles.bubbleMenuTextDisabled]}>重生成</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
       {message.content.length > 0 && (
         <>
-          <View style={styles.actions}>
-            {chatIcons.map((icon, i) => (
-              <Pressable key={i} style={styles.actionButton} onPress={() => handleAction(i)}>
-                <Image source={icon} style={[styles.actionImage, { tintColor: assistantFooterColor }]} resizeMode="contain" />
-              </Pressable>
-            ))}
-          </View>
+          {!assistantActionsHidden && (
+            <View style={styles.actions}>
+              {chatIcons.map((icon, i) => (
+                <Pressable key={i} style={styles.actionButton} onPress={() => handleAction(i)}>
+                  <Image source={icon} style={[styles.actionImage, { tintColor: assistantFooterColor }]} resizeMode="contain" />
+                </Pressable>
+              ))}
+            </View>
+          )}
           {!assistantFooterHidden && showAssistantFooter && (
             <View style={styles.logoRow}>
               <Image source={require('../../assets/claudelogo.png')} style={styles.logoImage} resizeMode="contain" />
@@ -668,14 +770,28 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+  assistantActionMenu: {
+    width: 292,
+  },
   bubbleMenuItem: {
     paddingVertical: 10,
     paddingHorizontal: 18,
+  },
+  assistantActionMenuItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  bubbleMenuItemDisabled: {
+    opacity: 0.45,
   },
   bubbleMenuText: {
     fontSize: 15,
     color: colors.text,
     fontWeight: '500',
+  },
+  bubbleMenuTextDisabled: {
+    color: colors.textTertiary,
   },
   bubbleMenuTextDanger: {
     color: colors.danger,
@@ -733,6 +849,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   assistantContent: {
     width: '100%',
     maxWidth: '100%',
+  },
+  assistantBubble: {
+    alignSelf: 'flex-start',
+    maxWidth: '75%',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
   },
   // 工具调用记录列表（位于回复文字上方）
   toolList: {

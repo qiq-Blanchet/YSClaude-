@@ -10,15 +10,15 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { lightColors, useThemeColors, type ThemeColors } from '../src/theme/colors';
 
 import { fonts } from '../src/theme/fonts';
-import { useSettingsStore, NamedAPIConfig, TTSConfig, MemoryVaultConfig, WebSearchConfig, type ChatInputIconKey, type ChatInputAppearanceStyle, type ShizukuFileRoot, type StickerOwner, type CustomSticker } from '../src/stores/settings';
+import { useSettingsStore, NamedAPIConfig, TTSConfig, MemoryVaultConfig, WebSearchConfig, type ChatInputIconKey, type ChatInputAppearanceStyle, type AssistantBubbleAppearanceStyle, type ShizukuFileRoot, type StickerOwner, type CustomSticker } from '../src/stores/settings';
 import { TopBarIcon, TOP_BAR_ICON_ITEMS } from '../src/components/TopBarIcon';
 import type { TopBarIconKey } from '../src/utils/topBarIconTypes';
 import { useChatStore } from '../src/stores/chat';
 import { useDiaryStore } from '../src/stores/diary';
 import { playTTS, stopTTS } from '../src/services/tts';
 import { streamChat } from '../src/services/api';
-import { Diary } from '../src/types';
-import { getFavoriteDiaries } from '../src/db/operations';
+import { Diary, HiddenRange } from '../src/types';
+import { getChatDiagnosticsConversation, getFavoriteDiaries, type ChatDiagnosticsMessage } from '../src/db/operations';
 import { uploadDiary } from '../src/services/tools';
 import { formatFullTime, formatDateOnly } from '../src/utils/time';
 import { importMyphonePrivateChatsFromPicker } from '../src/services/myphoneImport';
@@ -42,6 +42,7 @@ import {
 import { createAndShareBackup, pickBackupFile, restoreBackup, type PickedBackup } from '../src/services/backup';
 import { useKeyboardHeight } from '../src/hooks/useKeyboardHeight';
 import { buildStickerDefinitions, normalizeStickerName } from '../src/utils/stickers';
+import { mergeRanges } from '../src/utils/ranges';
 
 
 let colors = lightColors;
@@ -569,6 +570,7 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const [appearanceThemeName, setAppearanceThemeName] = useState('');
   const [appearanceThemesExpanded, setAppearanceThemesExpanded] = useState(false);
   const [userBubbleColorInput, setUserBubbleColorInput] = useState(appearanceConfig?.userBubbleColor || colors.userBubble);
+  const [assistantBubbleColorInput, setAssistantBubbleColorInput] = useState(appearanceConfig?.assistantBubbleColor || colors.userBubble);
   const [userTextColorInput, setUserTextColorInput] = useState(appearanceConfig?.userTextColor || colors.text);
   const [assistantTextColorInput, setAssistantTextColorInput] = useState(appearanceConfig?.assistantTextColor || colors.text);
   const [assistantTextStrokeColorInput, setAssistantTextStrokeColorInput] = useState(appearanceConfig?.assistantTextStrokeColor || colors.background);
@@ -583,6 +585,10 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const inputBlurIntensity = appearanceConfig?.inputBlurIntensity ?? 72;
   const inputBackgroundTransparent = !!appearanceConfig?.inputBackgroundTransparent;
   const userBubbleTransparent = !!appearanceConfig?.userBubbleTransparent;
+  const userBubbleWidthPercent = appearanceConfig?.userBubbleWidthPercent ?? 75;
+  const assistantBubbleStyle = appearanceConfig?.assistantBubbleStyle || 'plain';
+  const assistantBubbleTransparent = !!appearanceConfig?.assistantBubbleTransparent;
+  const assistantBubbleWidthPercent = appearanceConfig?.assistantBubbleWidthPercent ?? 75;
   const messageAvatarsVisible = !!appearanceConfig?.messageAvatarsVisible;
   const messageMetaVisible = appearanceConfig?.messageMetaVisible ?? true;
   const userAvatarImageUri = appearanceConfig?.userAvatarImageUri;
@@ -591,20 +597,25 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const userDisplayName = appearanceConfig?.userDisplayName ?? 'You';
   const assistantDisplayName = appearanceConfig?.assistantDisplayName ?? 'Claude';
   const assistantFooterHidden = !!appearanceConfig?.assistantFooterHidden;
+  const assistantActionsHidden = !!appearanceConfig?.assistantActionsHidden;
   const userBubbleRadius = appearanceConfig?.userBubbleRadius ?? 20;
   const userBubbleBlurIntensity = appearanceConfig?.userBubbleBlurIntensity ?? 0;
+  const assistantBubbleRadius = appearanceConfig?.assistantBubbleRadius ?? 20;
+  const assistantBubbleBlurIntensity = appearanceConfig?.assistantBubbleBlurIntensity ?? 0;
   const userFontSize = appearanceConfig?.userFontSize ?? 16;
   const assistantFontSize = appearanceConfig?.assistantFontSize ?? 16;
   const assistantTextStrokeWidth = appearanceConfig?.assistantTextStrokeWidth ?? 0;
 
   useEffect(() => {
     setUserBubbleColorInput(appearanceConfig?.userBubbleColor || colors.userBubble);
+    setAssistantBubbleColorInput(appearanceConfig?.assistantBubbleColor || colors.userBubble);
     setUserTextColorInput(appearanceConfig?.userTextColor || colors.text);
     setAssistantTextColorInput(appearanceConfig?.assistantTextColor || colors.text);
     setAssistantTextStrokeColorInput(appearanceConfig?.assistantTextStrokeColor || colors.background);
     setAssistantFooterColorInput(appearanceConfig?.assistantFooterColor || colors.textTertiary);
   }, [
     appearanceConfig?.assistantFooterColor,
+    appearanceConfig?.assistantBubbleColor,
     appearanceConfig?.assistantTextStrokeColor,
     appearanceConfig?.assistantTextColor,
     appearanceConfig?.userBubbleColor,
@@ -748,6 +759,7 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     value: string,
     key:
       | 'userBubbleColor'
+      | 'assistantBubbleColor'
       | 'userTextColor'
       | 'assistantTextColor'
       | 'assistantTextStrokeColor'
@@ -765,6 +777,11 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   function setInputStyle(nextStyle: ChatInputAppearanceStyle) {
     setAppearanceConfig({ inputStyle: nextStyle });
     showToast(nextStyle === 'glass' ? '输入框已切换为磨砂玻璃' : '输入框已切换为默认风格');
+  }
+
+  function setAssistantBubbleStyle(nextStyle: AssistantBubbleAppearanceStyle) {
+    setAppearanceConfig({ assistantBubbleStyle: nextStyle });
+    showToast(nextStyle === 'bubble' ? 'AI 气泡已切换为用户气泡样式' : 'AI 气泡已恢复原样式');
   }
 
   function handleSaveAppearanceTheme() {
@@ -1191,6 +1208,20 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           trackColor={{ true: colors.primary }}
         />
       </View>
+      <View style={styles.switchRow}>
+        <View style={styles.switchText}>
+          <Text style={styles.label}>隐藏 AI 气泡功能按键</Text>
+          <Text style={styles.hint}>隐藏 AI 气泡下方的编辑、删除、朗读、编辑上文、删除上文和重新生成按钮。</Text>
+        </View>
+        <Switch
+          value={assistantActionsHidden}
+          onValueChange={(value) => {
+            setAppearanceConfig({ assistantActionsHidden: value });
+            showToast(value ? 'AI 气泡功能按键已隐藏' : 'AI 气泡功能按键已显示');
+          }}
+          trackColor={{ true: colors.primary }}
+        />
+      </View>
       <View style={styles.field}>
         <Text style={styles.label}>AI 按键/尾注颜色</Text>
         <TextInput
@@ -1266,6 +1297,117 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           />
         </View>
       </View>
+
+      <View style={styles.appearanceNumberGrid}>
+        <View style={styles.appearanceNumberField}>
+          <Text style={styles.label}>用户气泡长度</Text>
+          <TextInput
+            style={styles.input}
+            value={String(userBubbleWidthPercent)}
+            onChangeText={(value) => setAppearanceConfig({ userBubbleWidthPercent: parseAppearanceNumber(value, 75, 45, 100) })}
+            keyboardType="number-pad"
+            placeholder="75"
+            placeholderTextColor={colors.textTertiary}
+          />
+        </View>
+      </View>
+
+      <View style={styles.segmentedRow}>
+        {(['plain', 'bubble'] as AssistantBubbleAppearanceStyle[]).map((styleKey) => (
+          <Pressable
+            key={styleKey}
+            style={[styles.segmentedButton, assistantBubbleStyle === styleKey && styles.segmentedButtonActive]}
+            onPress={() => setAssistantBubbleStyle(styleKey)}
+          >
+            <Text style={[styles.segmentedText, assistantBubbleStyle === styleKey && styles.segmentedTextActive]}>
+              {styleKey === 'plain' ? 'AI 原样式' : 'AI 用户气泡样式'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {assistantBubbleStyle === 'bubble' && (
+        <>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.label}>AI 气泡透明</Text>
+              <Text style={styles.hint}>保留文字和磨砂效果，不叠加 AI 气泡底色。</Text>
+            </View>
+            <Switch
+              value={assistantBubbleTransparent}
+              onValueChange={(value) => {
+                setAppearanceConfig({ assistantBubbleTransparent: value });
+                showToast(value ? 'AI 气泡已设为透明' : 'AI 气泡已恢复底色');
+              }}
+              trackColor={{ true: colors.primary }}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>AI 气泡颜色</Text>
+            <View style={styles.colorSwatchRow}>
+              {COLOR_SWATCHES.map((swatch) => (
+                <Pressable
+                  key={swatch}
+                  style={[styles.colorSwatch, { backgroundColor: swatch }, assistantBubbleColorInput === swatch && styles.colorSwatchActive]}
+                  onPress={() => {
+                    setAssistantBubbleColorInput(swatch);
+                    setAppearanceConfig({ assistantBubbleColor: swatch });
+                  }}
+                />
+              ))}
+            </View>
+            <TextInput
+              style={styles.input}
+              value={assistantBubbleColorInput}
+              onChangeText={setAssistantBubbleColorInput}
+              onBlur={() => commitColor('AI 气泡颜色', assistantBubbleColorInput, 'assistantBubbleColor')}
+              placeholder="#f1eee7"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.appearanceNumberGrid}>
+            <View style={styles.appearanceNumberField}>
+              <Text style={styles.label}>AI 气泡圆角</Text>
+              <TextInput
+                style={styles.input}
+                value={String(assistantBubbleRadius)}
+                onChangeText={(value) => setAppearanceConfig({ assistantBubbleRadius: parseAppearanceNumber(value, 20, 0, 36) })}
+                keyboardType="number-pad"
+                placeholder="20"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+            <View style={styles.appearanceNumberField}>
+              <Text style={styles.label}>AI 磨砂系数</Text>
+              <TextInput
+                style={styles.input}
+                value={String(assistantBubbleBlurIntensity)}
+                onChangeText={(value) => setAppearanceConfig({ assistantBubbleBlurIntensity: parseAppearanceNumber(value, 0, 0, 100) })}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+          </View>
+
+          <View style={styles.appearanceNumberGrid}>
+            <View style={styles.appearanceNumberField}>
+              <Text style={styles.label}>AI 气泡长度</Text>
+              <TextInput
+                style={styles.input}
+                value={String(assistantBubbleWidthPercent)}
+                onChangeText={(value) => setAppearanceConfig({ assistantBubbleWidthPercent: parseAppearanceNumber(value, 75, 45, 100) })}
+                keyboardType="number-pad"
+                placeholder="75"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+          </View>
+        </>
+      )}
 
       <View style={styles.appearanceNumberGrid}>
         <View style={styles.appearanceNumberField}>
@@ -1944,7 +2086,6 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     messageFloorOffset,
     addHiddenRange,
     restoreHiddenRange,
-    removeHiddenRange,
     setMessageHidden,
     loadConversation,
   } = useChatStore();
@@ -1953,20 +2094,64 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const [tokensStr, setTokensStr] = useState(maxOutputTokens ? String(maxOutputTokens) : '');
   const [promptText, setPromptText] = useState(systemPrompt);
   const [importingMyphone, setImportingMyphone] = useState(false);
+  const [hiddenDiagnosticMessages, setHiddenDiagnosticMessages] = useState<ChatDiagnosticsMessage[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!conversationId || hiddenMessageIds.length === 0) {
+      setHiddenDiagnosticMessages([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getChatDiagnosticsConversation(conversationId)
+      .then((detail) => {
+        if (cancelled) return;
+        const hiddenIdSet = new Set(hiddenMessageIds);
+        setHiddenDiagnosticMessages(
+          detail?.messages.filter((message) => hiddenIdSet.has(message.id)) ?? []
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHiddenDiagnosticMessages([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, hiddenMessageIds]);
 
   // 仅取 user/assistant 消息作为「楼层」序列（1-based）
   const floorMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
-  const hiddenMessageRows = hiddenMessageIds.map((id) => {
+  const hiddenDiagnosticById = new Map(hiddenDiagnosticMessages.map((message) => [message.id, message]));
+  type HiddenMessageRow = {
+    id: string;
+    role: string | null;
+    content: string | null;
+    floor: number | null;
+  };
+  const hiddenMessageRows: HiddenMessageRow[] = hiddenMessageIds.map((id) => {
     const message = messages.find((item) => item.id === id) ?? null;
+    const diagnosticMessage = hiddenDiagnosticById.get(id) ?? null;
     const localFloorIndex = message
       ? floorMessages.findIndex((item) => item.id === id)
       : -1;
     return {
       id,
-      message,
-      floor: localFloorIndex >= 0 ? messageFloorOffset + localFloorIndex + 1 : null,
+      role: message?.role ?? diagnosticMessage?.role ?? null,
+      content: message?.content ?? diagnosticMessage?.content ?? null,
+      floor: localFloorIndex >= 0
+        ? messageFloorOffset + localFloorIndex + 1
+        : diagnosticMessage?.floorNumber ?? null,
     };
   });
+  const hiddenMessageFloorRanges = hiddenMessageRows
+    .filter((row): row is HiddenMessageRow & { floor: number } => row.floor !== null)
+    .map((row) => ({ from: row.floor, to: row.floor }));
+  const mergedHiddenRanges = mergeRanges([...hiddenRanges, ...hiddenMessageFloorRanges]);
+  const hiddenContextRows = hiddenMessageRows.filter((row) => row.floor === null);
+  const hasHiddenMessages = mergedHiddenRanges.length > 0 || hiddenContextRows.length > 0;
 
   function handleAddRange() {
     const range = parseInputRange();
@@ -1995,6 +2180,20 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   function clearRangeInputs() {
     setFromStr('');
     setToStr('');
+  }
+
+  async function handleRestoreMergedRange(range: HiddenRange) {
+    await restoreHiddenRange(range);
+    const idsToRestore = hiddenMessageRows
+      .filter((row) => row.floor !== null && row.floor >= range.from && row.floor <= range.to)
+      .map((row) => row.id);
+    await Promise.all(idsToRestore.map((id) => setMessageHidden(id, false)));
+  }
+
+  function formatHiddenRange(range: HiddenRange) {
+    return range.from === range.to
+      ? `第 ${range.from} 条`
+      : `第 ${range.from} 条 ~ 第 ${range.to} 条`;
   }
 
   // 预览：两个输入都为有效数字时，给出该范围首尾两条消息的摘要
@@ -2117,35 +2316,29 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         <Text style={styles.hint}>请先打开一个对话后再设置隐藏范围。</Text>
       ) : (
         <>
-          {hiddenRanges.length > 0 && (
+          {hasHiddenMessages && (
             <View style={styles.rangeList}>
-              {hiddenRanges.map((r, i) => (
-                <View key={i} style={styles.rangeItem}>
-                  <Text style={styles.rangeText}>第 {r.from} 条 ~ 第 {r.to} 条</Text>
-                  <Pressable onPress={() => removeHiddenRange(i)}>
-                    <Text style={styles.rangeDelete}>×</Text>
+              <Text style={styles.previewHint}>已隐藏消息</Text>
+              {mergedHiddenRanges.map((range) => (
+                <View key={`${range.from}-${range.to}`} style={styles.rangeItem}>
+                  <Text style={styles.rangeText}>{formatHiddenRange(range)}</Text>
+                  <Pressable onPress={() => handleRestoreMergedRange(range)}>
+                    <Text style={styles.rangeDelete}>恢复</Text>
                   </Pressable>
                 </View>
               ))}
-            </View>
-          )}
-
-          {hiddenMessageRows.length > 0 && (
-            <View style={styles.rangeList}>
-              <Text style={styles.previewHint}>单条隐藏消息</Text>
-              {hiddenMessageRows.map((row) => (
+              {hiddenContextRows.length > 0 && (
+                <Text style={[styles.previewHint, styles.hiddenContextTitle]}>上下文消息</Text>
+              )}
+              {hiddenContextRows.map((row) => (
                 <View key={row.id} style={styles.rangeItem}>
                   <View style={styles.hiddenMessageText}>
                     <Text style={styles.rangeText}>
-                      {row.floor !== null
-                        ? `第 ${row.floor} 条`
-                        : row.message
-                          ? roleLabel(row.message.role)
-                          : '未加载消息'}
+                      {row.role ? roleLabel(row.role) : '未加载消息'}
                     </Text>
                     <Text style={styles.previewText} numberOfLines={2}>
-                      {row.message
-                        ? `${roleLabel(row.message.role)}：${snippet(row.message.content) || '（空消息）'}`
+                      {row.role !== null && row.content !== null
+                        ? `${roleLabel(row.role)}：${snippet(row.content) || '（空消息）'}`
                         : row.id}
                     </Text>
                   </View>
@@ -3954,7 +4147,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 6,
   },
   rangeText: { fontSize: 14, color: colors.text },
-  rangeDelete: { fontSize: 20, color: colors.danger, paddingHorizontal: 8 },
+  rangeDelete: { fontSize: 14, color: colors.primary, fontWeight: '600', paddingHorizontal: 8 },
   hiddenMessageText: { flex: 1, minWidth: 0, paddingRight: 10 },
   rangeInputRow: {
     flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 20,
@@ -3984,6 +4177,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   previewHint: {
     fontSize: 11, color: colors.textTertiary, marginBottom: 8,
     textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  hiddenContextTitle: {
+    marginTop: 6,
   },
   previewItem: { gap: 3 },
   previewLabel: { fontSize: 12, color: colors.primary, fontWeight: '600' },
