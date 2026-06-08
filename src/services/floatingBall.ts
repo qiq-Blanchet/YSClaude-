@@ -1,4 +1,4 @@
-import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
+import { AppState, DeviceEventEmitter, NativeModules, Platform } from 'react-native';
 import { useSettingsStore } from '../stores/settings';
 import { playTTS, stopTTS } from './tts';
 
@@ -50,6 +50,7 @@ interface FloatingBallModule {
 
 interface FloatingBallMessageOptions {
   speak?: boolean;
+  showWhileAppActive?: boolean;
 }
 
 export type FloatingBallToolAction =
@@ -107,7 +108,9 @@ export async function showFloatingBallMessage(
   text: string,
   options: FloatingBallMessageOptions = {}
 ): Promise<void> {
-  await ensureFloatingBall().showMessage(text);
+  if (shouldShowFloatingBallMessage(options)) {
+    await ensureFloatingBall().showMessage(text);
+  }
   if (options.speak !== false) {
     playFloatingBallTTS(text);
   }
@@ -118,6 +121,15 @@ export async function enqueueFloatingBallMessageSequence(
   intervalMs: number,
   reset = false
 ): Promise<void> {
+  if (!shouldShowFloatingBallMessage()) {
+    if (reset && messages.length === 0) {
+      const floatingBall = ensureFloatingBall();
+      if (floatingBall.enqueueMessageSequence) {
+        await floatingBall.enqueueMessageSequence([], intervalMs, true);
+      }
+    }
+    return;
+  }
   const floatingBall = ensureFloatingBall();
   if (!floatingBall.enqueueMessageSequence) {
     for (const message of messages) {
@@ -219,6 +231,10 @@ function playFloatingBallTTS(text: string): void {
   if (!floatingBallConfig.ttsEnabled) return;
 
   playTTS(speakableText, ttsConfig).catch(() => {});
+}
+
+function shouldShowFloatingBallMessage(options: FloatingBallMessageOptions = {}): boolean {
+  return options.showWhileAppActive === true || AppState.currentState !== 'active';
 }
 
 async function configureFloatingBallAssets(floatingBall: FloatingBallModule): Promise<void> {
