@@ -2871,7 +2871,7 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           (result.skippedCharacters > 0 ? `\n跳过 ${result.skippedCharacters} 个空角色。` : '')
       );
     } catch (error: any) {
-      Alert.alert('导入失败', error?.message || '无法读取 myphone 单聊备份');
+      Alert.alert('导入失败', error?.message || '无法读取 ephone 单聊备份');
     } finally {
       setImportingMyphone(false);
     }
@@ -2921,8 +2921,8 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>myphone 导入</Text>
-      <Text style={styles.hint}>选择 myphone 导出的 .ee 或 JSON 单聊备份；只导入角色单聊，群聊会被跳过。</Text>
+      <Text style={styles.sectionTitle}>ephone 导入</Text>
+      <Text style={styles.hint}>选择 ephone 导出的 .ee 或 JSON 单聊备份；只导入角色单聊，群聊会被跳过。</Text>
       <Pressable
         style={[styles.importButton, importingMyphone && styles.importButtonDisabled]}
         onPress={handleImportMyphone}
@@ -2931,7 +2931,7 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         {importingMyphone ? (
           <ActivityIndicator size="small" color="#FFFFFF" />
         ) : (
-          <Text style={styles.importButtonText}>导入 myphone 单聊</Text>
+          <Text style={styles.importButtonText}>导入 ephone 单聊</Text>
         )}
       </Pressable>
 
