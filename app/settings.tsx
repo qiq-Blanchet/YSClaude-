@@ -430,6 +430,62 @@ function parseAppearanceNumber(value: string, fallback: number, min: number, max
   return Math.min(max, Math.max(min, next));
 }
 
+type ClampedNumberInputProps = {
+  value: number;
+  fallback: number;
+  min: number;
+  max: number;
+  placeholder?: string;
+  onCommit: (value: number) => void;
+  keyboardType?: 'number-pad' | 'decimal-pad';
+};
+
+function ClampedNumberInput({
+  value,
+  fallback,
+  min,
+  max,
+  placeholder,
+  onCommit,
+  keyboardType = 'number-pad',
+}: ClampedNumberInputProps) {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      setText(String(value));
+    }
+  }, [focused, value]);
+
+  function commit() {
+    const next = parseAppearanceNumber(text, fallback, min, max);
+    const normalized = String(next);
+    setText(normalized);
+    setFocused(false);
+    if (next !== value) {
+      onCommit(next);
+    }
+  }
+
+  return (
+    <TextInput
+      style={styles.input}
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChangeText={(next) => {
+        const cleaned = keyboardType === 'decimal-pad' ? next.replace(/[^0-9.]/g, '') : next.replace(/[^0-9]/g, '');
+        setText(cleaned);
+      }}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      keyboardType={keyboardType}
+      placeholder={placeholder}
+      placeholderTextColor={colors.textTertiary}
+    />
+  );
+}
+
 function parseStickerImportLine(line: string): { name: string; uri: string } | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -1319,13 +1375,13 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       <View style={styles.appearanceNumberGrid}>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>头像圆角</Text>
-          <TextInput
-            style={styles.input}
-            value={String(messageAvatarRadius)}
-            onChangeText={(value) => setAppearanceConfig({ messageAvatarRadius: parseAppearanceNumber(value, 18, 0, 20) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={messageAvatarRadius}
+            fallback={18}
+            min={0}
+            max={20}
             placeholder="18"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ messageAvatarRadius: value })}
           />
         </View>
       </View>
@@ -1459,24 +1515,24 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       <View style={styles.appearanceNumberGrid}>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>用户气泡圆角</Text>
-          <TextInput
-            style={styles.input}
-            value={String(userBubbleRadius)}
-            onChangeText={(value) => setAppearanceConfig({ userBubbleRadius: parseAppearanceNumber(value, 20, 0, 36) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={userBubbleRadius}
+            fallback={20}
+            min={0}
+            max={36}
             placeholder="20"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ userBubbleRadius: value })}
           />
         </View>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>磨砂系数</Text>
-          <TextInput
-            style={styles.input}
-            value={String(userBubbleBlurIntensity)}
-            onChangeText={(value) => setAppearanceConfig({ userBubbleBlurIntensity: parseAppearanceNumber(value, 0, 0, 100) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={userBubbleBlurIntensity}
+            fallback={0}
+            min={0}
+            max={100}
             placeholder="0"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ userBubbleBlurIntensity: value })}
           />
         </View>
       </View>
@@ -1484,13 +1540,13 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       <View style={styles.appearanceNumberGrid}>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>用户气泡长度</Text>
-          <TextInput
-            style={styles.input}
-            value={String(userBubbleWidthPercent)}
-            onChangeText={(value) => setAppearanceConfig({ userBubbleWidthPercent: parseAppearanceNumber(value, 75, 45, 100) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={userBubbleWidthPercent}
+            fallback={75}
+            min={45}
+            max={100}
             placeholder="75"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ userBubbleWidthPercent: value })}
           />
         </View>
       </View>
@@ -1554,24 +1610,24 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           <View style={styles.appearanceNumberGrid}>
             <View style={styles.appearanceNumberField}>
               <Text style={styles.label}>AI 气泡圆角</Text>
-              <TextInput
-                style={styles.input}
-                value={String(assistantBubbleRadius)}
-                onChangeText={(value) => setAppearanceConfig({ assistantBubbleRadius: parseAppearanceNumber(value, 20, 0, 36) })}
-                keyboardType="number-pad"
+              <ClampedNumberInput
+                value={assistantBubbleRadius}
+                fallback={20}
+                min={0}
+                max={36}
                 placeholder="20"
-                placeholderTextColor={colors.textTertiary}
+                onCommit={(value) => setAppearanceConfig({ assistantBubbleRadius: value })}
               />
             </View>
             <View style={styles.appearanceNumberField}>
               <Text style={styles.label}>AI 磨砂系数</Text>
-              <TextInput
-                style={styles.input}
-                value={String(assistantBubbleBlurIntensity)}
-                onChangeText={(value) => setAppearanceConfig({ assistantBubbleBlurIntensity: parseAppearanceNumber(value, 0, 0, 100) })}
-                keyboardType="number-pad"
+              <ClampedNumberInput
+                value={assistantBubbleBlurIntensity}
+                fallback={0}
+                min={0}
+                max={100}
                 placeholder="0"
-                placeholderTextColor={colors.textTertiary}
+                onCommit={(value) => setAppearanceConfig({ assistantBubbleBlurIntensity: value })}
               />
             </View>
           </View>
@@ -1579,13 +1635,13 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           <View style={styles.appearanceNumberGrid}>
             <View style={styles.appearanceNumberField}>
               <Text style={styles.label}>AI 气泡长度</Text>
-              <TextInput
-                style={styles.input}
-                value={String(assistantBubbleWidthPercent)}
-                onChangeText={(value) => setAppearanceConfig({ assistantBubbleWidthPercent: parseAppearanceNumber(value, 75, 45, 100) })}
-                keyboardType="number-pad"
+              <ClampedNumberInput
+                value={assistantBubbleWidthPercent}
+                fallback={75}
+                min={45}
+                max={100}
                 placeholder="75"
-                placeholderTextColor={colors.textTertiary}
+                onCommit={(value) => setAppearanceConfig({ assistantBubbleWidthPercent: value })}
               />
             </View>
           </View>
@@ -1595,24 +1651,24 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       <View style={styles.appearanceNumberGrid}>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>用户字号</Text>
-          <TextInput
-            style={styles.input}
-            value={String(userFontSize)}
-            onChangeText={(value) => setAppearanceConfig({ userFontSize: parseAppearanceNumber(value, 16, 12, 24) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={userFontSize}
+            fallback={16}
+            min={12}
+            max={24}
             placeholder="16"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ userFontSize: value })}
           />
         </View>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>AI 字号</Text>
-          <TextInput
-            style={styles.input}
-            value={String(assistantFontSize)}
-            onChangeText={(value) => setAppearanceConfig({ assistantFontSize: parseAppearanceNumber(value, 16, 12, 24) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={assistantFontSize}
+            fallback={16}
+            min={12}
+            max={24}
             placeholder="16"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ assistantFontSize: value })}
           />
         </View>
       </View>
@@ -1659,13 +1715,13 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         </View>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>AI 文字描边粗细</Text>
-          <TextInput
-            style={styles.input}
-            value={String(assistantTextStrokeWidth)}
-            onChangeText={(value) => setAppearanceConfig({ assistantTextStrokeWidth: parseAppearanceNumber(value, 0, 0, 8) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={assistantTextStrokeWidth}
+            fallback={0}
+            min={0}
+            max={8}
             placeholder="0"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ assistantTextStrokeWidth: value })}
           />
         </View>
       </View>
@@ -1688,13 +1744,13 @@ function AppearanceTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       <View style={styles.appearanceNumberGrid}>
         <View style={styles.appearanceNumberField}>
           <Text style={styles.label}>输入框磨砂系数</Text>
-          <TextInput
-            style={styles.input}
-            value={String(inputBlurIntensity)}
-            onChangeText={(value) => setAppearanceConfig({ inputBlurIntensity: parseAppearanceNumber(value, 72, 0, 100) })}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={inputBlurIntensity}
+            fallback={72}
+            min={0}
+            max={100}
             placeholder="72"
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => setAppearanceConfig({ inputBlurIntensity: value })}
           />
         </View>
       </View>
@@ -1879,14 +1935,8 @@ function FloatingBallTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     showToast(kind === 'normal' ? '正常态已恢复默认球形' : '贴边态已恢复默认球形');
   }
 
-  function handleSizeChange(kind: 'normal' | 'edge', value: string) {
-    const nextSize = parseAppearanceNumber(
-      value,
-      FLOATING_BALL_SIZE_DEFAULT,
-      FLOATING_BALL_SIZE_MIN,
-      FLOATING_BALL_SIZE_MAX
-    );
-    setFloatingBallConfig(kind === 'normal' ? { normalSizeDp: nextSize } : { edgeSizeDp: nextSize });
+  function handleSizeChange(kind: 'normal' | 'edge', value: number) {
+    setFloatingBallConfig(kind === 'normal' ? { normalSizeDp: value } : { edgeSizeDp: value });
     if (floatingBallConfig.enabled) {
       syncFloatingBallAssets().catch(() => undefined);
     }
@@ -2001,24 +2051,24 @@ function FloatingBallTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       <View style={styles.floatingBallSizeRow}>
         <View style={styles.floatingBallSizeField}>
           <Text style={styles.label}>正常态大小</Text>
-          <TextInput
-            style={styles.input}
-            value={String(normalSizeDp)}
-            onChangeText={(value) => handleSizeChange('normal', value)}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={normalSizeDp}
+            fallback={FLOATING_BALL_SIZE_DEFAULT}
+            min={FLOATING_BALL_SIZE_MIN}
+            max={FLOATING_BALL_SIZE_MAX}
             placeholder={String(FLOATING_BALL_SIZE_DEFAULT)}
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => handleSizeChange('normal', value)}
           />
         </View>
         <View style={styles.floatingBallSizeField}>
           <Text style={styles.label}>贴边态大小</Text>
-          <TextInput
-            style={styles.input}
-            value={String(edgeSizeDp)}
-            onChangeText={(value) => handleSizeChange('edge', value)}
-            keyboardType="number-pad"
+          <ClampedNumberInput
+            value={edgeSizeDp}
+            fallback={FLOATING_BALL_SIZE_DEFAULT}
+            min={FLOATING_BALL_SIZE_MIN}
+            max={FLOATING_BALL_SIZE_MAX}
             placeholder={String(FLOATING_BALL_SIZE_DEFAULT)}
-            placeholderTextColor={colors.textTertiary}
+            onCommit={(value) => handleSizeChange('edge', value)}
           />
         </View>
       </View>
@@ -2041,17 +2091,13 @@ function FloatingBallTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
 
       <View style={styles.field}>
         <Text style={styles.label}>切换间隔（秒）</Text>
-        <TextInput
-          style={styles.input}
-          value={String(assetAutoSwitchIntervalSeconds)}
-          onChangeText={(value) => {
-            setFloatingBallConfig({
-              assetAutoSwitchIntervalSeconds: parseAppearanceNumber(value, 8, 1, 3600),
-            });
-          }}
-          keyboardType="number-pad"
+        <ClampedNumberInput
+          value={assetAutoSwitchIntervalSeconds}
+          fallback={8}
+          min={1}
+          max={3600}
           placeholder="8"
-          placeholderTextColor={colors.textTertiary}
+          onCommit={(value) => setFloatingBallConfig({ assetAutoSwitchIntervalSeconds: value })}
         />
       </View>
 

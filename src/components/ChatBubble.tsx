@@ -237,6 +237,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   const [assistantMenuVisible, setAssistantMenuVisible] = useState(false);
   const [pictureActionTarget, setPictureActionTarget] = useState<GeneratedPicture | null>(null);
   const [pictureActionBusy, setPictureActionBusy] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ uri: string; title?: string } | null>(null);
   // 长按时测量得到的气泡屏幕坐标，用于把菜单锚定到气泡上方
   const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const [expandedTools, setExpandedTools] = useState<Record<number, boolean>>({});
@@ -363,6 +364,32 @@ export const ChatBubble = React.memo(function ChatBubble({
       </Pressable>
     </Modal>
   );
+  const imagePreviewModal = (
+    <Modal
+      transparent
+      visible={!!previewImage}
+      animationType="fade"
+      onRequestClose={() => setPreviewImage(null)}
+    >
+      <Pressable style={styles.imagePreviewOverlay} onPress={() => setPreviewImage(null)}>
+        <View style={styles.imagePreviewFrame} onStartShouldSetResponder={() => true}>
+          <Image
+            source={{ uri: previewImage?.uri || '' }}
+            style={styles.imagePreview}
+            resizeMode="contain"
+          />
+          {!!previewImage?.title && (
+            <Text style={styles.imagePreviewTitle} numberOfLines={2}>
+              {previewImage.title}
+            </Text>
+          )}
+          <Pressable style={styles.imagePreviewClose} onPress={() => setPreviewImage(null)}>
+            <Text style={styles.imagePreviewCloseText}>关闭</Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+  );
 
   if (isUser) {
     // 菜单宽度估算，用于让菜单右对齐气泡右缘
@@ -395,7 +422,7 @@ export const ChatBubble = React.memo(function ChatBubble({
           {message.imageUri && (
             <Pressable
               ref={!message.content ? bubbleRef : undefined}
-              onPress={onBubblePress}
+              onPress={() => setPreviewImage({ uri: message.imageUri!, title: '用户发送的图片' })}
               onLongPress={!message.content ? handleUserLongPress : undefined}
             >
               <Image
@@ -479,6 +506,7 @@ export const ChatBubble = React.memo(function ChatBubble({
         </Modal>
 
         {editModal}
+        {imagePreviewModal}
       </View>
     );
   }
@@ -541,6 +569,11 @@ export const ChatBubble = React.memo(function ChatBubble({
 
   function handleGeneratedPictureLongPress(picture: GeneratedPicture) {
     setPictureActionTarget(picture);
+  }
+
+  function handleGeneratedPicturePress(picture: GeneratedPicture) {
+    if (!picture.imageUri) return;
+    setPreviewImage({ uri: picture.imageUri, title: picture.prompt || 'AI 生成图片' });
   }
 
   async function runPictureAction(action: 'regenerate' | 'delete-image' | 'delete-token' | 'download') {
@@ -674,6 +707,7 @@ export const ChatBubble = React.memo(function ChatBubble({
           markdownRules={markdownRules}
           stickers={messageStickers}
           generatedPics={message.generatedPics}
+          onPicturePress={handleGeneratedPicturePress}
           onPictureLongPress={handleGeneratedPictureLongPress}
         />
       </Pressable>
@@ -799,6 +833,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       )}
 
       {editModal}
+      {imagePreviewModal}
     </View>
   );
 });
@@ -977,6 +1012,48 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text,
+  },
+  imagePreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.86)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+  imagePreviewFrame: {
+    width: '100%',
+    height: '90%',
+    maxWidth: 920,
+    maxHeight: '92%',
+    gap: 12,
+    alignItems: 'center',
+  },
+  imagePreview: {
+    width: '100%',
+    flex: 1,
+    minHeight: 220,
+    borderRadius: 14,
+    backgroundColor: '#0B0B0B',
+  },
+  imagePreviewTitle: {
+    alignSelf: 'stretch',
+    color: '#F5F5F5',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  imagePreviewClose: {
+    minHeight: 42,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreviewCloseText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   bubbleMenuItemDisabled: {
     opacity: 0.45,

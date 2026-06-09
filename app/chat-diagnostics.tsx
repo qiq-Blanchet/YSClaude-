@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,6 +29,13 @@ import { useChatStore } from '../src/stores/chat';
 
 let colors = lightColors;
 
+type IssueJumpTarget = {
+  messageId: string;
+  databaseIndex: number;
+  floorNumber: number | null;
+  issues: string[];
+};
+
 export default function ChatDiagnosticsScreen() {
   colors = useThemeColors();
   styles = useMemo(() => createStyles(colors), [colors]);
@@ -47,6 +54,18 @@ export default function ChatDiagnosticsScreen() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [hidingMessageId, setHidingMessageId] = useState<string | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const messageListRef = useRef<FlatList<ChatDiagnosticsMessage>>(null);
+  const pendingJumpMessageIdRef = useRef<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadConversations = useCallback(async () => {
     setLoading(true);
@@ -131,6 +150,7 @@ export default function ChatDiagnosticsScreen() {
     setSelectedId(null);
     setDetail(null);
     setMessageQuery('');
+    setHighlightedMessageId(null);
   }, []);
 
   const filteredMessages = useMemo(() => {
@@ -141,6 +161,62 @@ export default function ChatDiagnosticsScreen() {
       buildMessageSearchText(message).includes(keyword)
     );
   }, [detail, messageQuery]);
+
+  const issueJumpTargets = useMemo<IssueJumpTarget[]>(() => {
+    return (detail?.messages ?? [])
+      .map((message) => ({
+        messageId: message.id,
+        databaseIndex: message.databaseIndex,
+        floorNumber: message.floorNumber,
+        issues: message.issues.filter(isActionableIssue),
+      }))
+      .filter((target) => target.issues.length > 0);
+  }, [detail]);
+
+  const scrollToMessage = useCallback((messageId: string) => {
+    const index = filteredMessages.findIndex((message) => message.id === messageId);
+    if (index < 0) {
+      pendingJumpMessageIdRef.current = messageId;
+      if (messageQuery.trim()) {
+        setMessageQuery('');
+      }
+      return;
+    }
+
+    setHighlightedMessageId(messageId);
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null);
+      highlightTimerRef.current = null;
+    }, 1800);
+
+    messageListRef.current?.scrollToIndex({
+      index,
+      animated: true,
+      viewPosition: 0.14,
+    });
+  }, [filteredMessages, messageQuery]);
+
+  useEffect(() => {
+    const messageId = pendingJumpMessageIdRef.current;
+    if (!messageId) return;
+    if (!filteredMessages.some((message) => message.id === messageId)) return;
+
+    pendingJumpMessageIdRef.current = null;
+    const timer = setTimeout(() => scrollToMessage(messageId), 0);
+    return () => clearTimeout(timer);
+  }, [filteredMessages, scrollToMessage]);
+
+  const jumpToIssue = useCallback((target: IssueJumpTarget) => {
+    pendingJumpMessageIdRef.current = target.messageId;
+    if (messageQuery.trim()) {
+      setMessageQuery('');
+      return;
+    }
+    scrollToMessage(target.messageId);
+  }, [messageQuery, scrollToMessage]);
 
   const openEditMessage = useCallback((message: ChatDiagnosticsMessage) => {
     setEditingMessage(message);
@@ -263,7 +339,7 @@ export default function ChatDiagnosticsScreen() {
 
   const renderMessage = useCallback(
     ({ item }: { item: ChatDiagnosticsMessage }) => (
-      <View style={styles.messageRow}>
+      <View style={[styles.messageRow, highlightedMessageId === item.id && styles.messageRowHighlighted]}>
         <View style={styles.messageTop}>
           <Text style={styles.messageIndex}>DB {item.databaseIndex}</Text>
           <Text style={styles.floorPill}>
@@ -287,7 +363,7 @@ export default function ChatDiagnosticsScreen() {
         {item.issues.length > 0 && (
           <View style={styles.issueRow}>
             {item.issues.map((issue) => (
-              <Text key={issue} style={styles.issueChip}>{issue}</Text>
+              <Text key={issue} style={styles.issueChip}>{formatMarkerLabel(issue)}</Text>
             ))}
           </View>
         )}
@@ -325,7 +401,7 @@ export default function ChatDiagnosticsScreen() {
         </View>
       </View>
     ),
-    [confirmDeleteMessage, deletingMessageId, hidingMessageId, openEditMessage, toggleMessageHidden]
+    [confirmDeleteMessage, deletingMessageId, highlightedMessageId, hidingMessageId, openEditMessage, toggleMessageHidden]
   );
 
   const listHeader = selectedId ? (
@@ -336,6 +412,8 @@ export default function ChatDiagnosticsScreen() {
       messageQuery={messageQuery}
       onMessageQueryChange={setMessageQuery}
       filteredMessageCount={filteredMessages.length}
+      issueJumpTargets={issueJumpTargets}
+      onJumpToIssue={jumpToIssue}
     />
   ) : (
     <View>
@@ -384,15 +462,27 @@ export default function ChatDiagnosticsScreen() {
         </View>
       ) : selectedId ? (
         <FlatList
+          ref={messageListRef}
           data={filteredMessages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
+          extraData={highlightedMessageId}
           ListHeaderComponent={listHeader}
           ListEmptyComponent={
             detailLoading
               ? <ActivityIndicator color={colors.primary} />
               : <Text style={styles.emptyText}>{messageQuery.trim() ? 'No messages match this search.' : 'No messages.'}</Text>
           }
+          onScrollToIndexFailed={(info) => {
+            messageListRef.current?.scrollToOffset({
+              offset: Math.max(0, info.averageItemLength * info.index),
+              animated: true,
+            });
+            const target = filteredMessages[info.index];
+            if (target) {
+              setTimeout(() => scrollToMessage(target.id), 120);
+            }
+          }}
           contentContainerStyle={styles.listContent}
         />
       ) : (
@@ -452,6 +542,8 @@ function DetailHeader({
   messageQuery,
   onMessageQueryChange,
   filteredMessageCount,
+  issueJumpTargets,
+  onJumpToIssue,
 }: {
   detail: ChatDiagnosticsDetail | null;
   loading: boolean;
@@ -459,6 +551,8 @@ function DetailHeader({
   messageQuery: string;
   onMessageQueryChange: (value: string) => void;
   filteredMessageCount: number;
+  issueJumpTargets: IssueJumpTarget[];
+  onJumpToIssue: (target: IssueJumpTarget) => void;
 }) {
   if (loading && !detail) {
     return (
@@ -500,6 +594,27 @@ function DetailHeader({
       <Text style={styles.metaLine}>
         pending boundary: {detail.pendingResponseBoundaryMessageId === undefined ? 'unset' : detail.pendingResponseBoundaryMessageId || 'start'}
       </Text>
+      {issueJumpTargets.length > 0 && (
+        <View style={styles.issueJumpPanel}>
+          <Text style={styles.warningText}>问题跳转</Text>
+          <View style={styles.issueJumpGrid}>
+            {issueJumpTargets.map((target) => (
+              <Pressable
+                key={target.messageId}
+                style={styles.issueJumpButton}
+                onPress={() => onJumpToIssue(target)}
+              >
+                <Text style={styles.issueJumpButtonText}>
+                  {formatIssueJumpTarget(target)}
+                </Text>
+                <Text style={styles.issueJumpDescription} numberOfLines={1}>
+                  {target.issues.map(formatMarkerLabel).join(' / ')}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
       <TextInput
         style={styles.searchInput}
         value={messageQuery}
@@ -541,20 +656,20 @@ function StatChip({ label, value }: { label: string; value: number }) {
 }
 
 function DiagnosticsLegend({ compact = false }: { compact?: boolean }) {
-  const rows = [
-    ['AI history', 'user/assistant history sent to the model unless hidden.'],
-    ['AI context', 'system marker that adds runtime context, not a normal chat-history message.'],
-    ['UI only', 'stored/displayed locally; normal chat requests do not send it.'],
-    ['Hidden from AI', 'message id is blocked from future AI requests. Works for every role.'],
-    ['hidden floor', 'hidden by floor range; only applies to user/assistant floor messages.'],
-    ['empty assistant', 'assistant placeholder with no text/tool result; often safe to delete.'],
-    ['same timestamp', 'multiple rows share one created_at, which can affect paging/floor offsets.'],
-    ['no floor', 'role is not user/assistant, so it does not receive a floor number.'],
+  const rows: Array<[string, string]> = [
+    ['AI 历史', '用户和助手消息会作为普通历史发送给模型，除非被隐藏。'],
+    ['AI 上下文', '系统标记消息，用来附加运行时上下文，不算普通聊天历史。'],
+    ['仅 UI', '只在本地存储或展示，普通聊天请求不会发送给模型。'],
+    ['已对 AI 隐藏', '这条消息 ID 被屏蔽，后续请求不会发送给 AI，任意角色都适用。'],
+    ['隐藏楼层', '命中了隐藏楼层范围，只影响用户和助手这类有楼层的消息。'],
+    ['空助手消息', '助手占位消息没有正文或工具结果，通常可以检查后删除。'],
+    ['同时间戳', '多条数据库记录共享同一个 created_at，可能影响分页和楼层偏移。'],
+    ['无楼层', '角色不是 user/assistant，因此不会分配楼层号。'],
   ];
 
   return (
     <View style={[styles.legendPanel, compact && styles.legendPanelCompact]}>
-      <Text style={styles.legendTitle}>Markers</Text>
+      <Text style={styles.legendTitle}>Markers 标记说明</Text>
       {rows.map(([label, description]) => (
         <View key={label} style={styles.legendRow}>
           <Text style={styles.legendLabel}>{label}</Text>
@@ -593,6 +708,7 @@ function buildMessageSearchText(message: ChatDiagnosticsMessage): string {
     message.imageUri ? `image ${message.imageUri}` : '',
     message.toolCallId ? `tool call ${message.toolCallId}` : '',
     message.issues.join(' '),
+    message.issues.map(formatMarkerLabel).join(' '),
     String(message.createdAt),
   ]
     .join(' ')
@@ -615,9 +731,37 @@ function roleStyle(role: string) {
 }
 
 function aiVisibilityText(visibility: ChatDiagnosticsMessage['aiVisibility']): string {
-  if (visibility === 'history') return 'AI history';
-  if (visibility === 'runtime-context') return 'AI context';
-  return 'UI only';
+  if (visibility === 'history') return 'AI 历史';
+  if (visibility === 'runtime-context') return 'AI 上下文';
+  return '仅 UI';
+}
+
+function isActionableIssue(issue: string): boolean {
+  return issue !== 'no floor' && issue !== 'hidden floor';
+}
+
+function formatIssueJumpTarget(target: IssueJumpTarget): string {
+  if (target.floorNumber === null) return `DB ${target.databaseIndex}`;
+  return `#${target.floorNumber} · DB ${target.databaseIndex}`;
+}
+
+function formatMarkerLabel(marker: string): string {
+  if (marker.startsWith('same timestamp x')) {
+    return marker.replace('same timestamp', '同时间戳');
+  }
+  const labels: Record<string, string> = {
+    'no floor': '无楼层',
+    'hidden floor': '隐藏楼层',
+    'empty assistant': '空助手消息',
+    'invalid tool_calls JSON': 'tool_calls JSON 无效',
+    'invalid tool_invocations JSON': 'tool_invocations JSON 无效',
+    'invalid created_at': 'created_at 无效',
+    'AI history': 'AI 历史',
+    'AI context': 'AI 上下文',
+    'UI only': '仅 UI',
+    'Hidden from AI': '已对 AI 隐藏',
+  };
+  return labels[marker] ?? marker;
 }
 
 function aiVisibilityStyle(visibility: ChatDiagnosticsMessage['aiVisibility']) {
@@ -803,6 +947,38 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: 10,
   },
+  issueJumpPanel: {
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+  },
+  issueJumpGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  issueJumpButton: {
+    minWidth: 92,
+    maxWidth: '48%',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerSurface,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  issueJumpButtonText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  issueJumpDescription: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+  },
   messageRow: {
     backgroundColor: colors.surface,
     borderRadius: 8,
@@ -810,6 +986,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     gap: 7,
+  },
+  messageRowHighlighted: {
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerSurface,
   },
   messageTop: {
     flexDirection: 'row',

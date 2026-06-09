@@ -19,6 +19,7 @@ interface Props {
   markdownRules?: any;
   stickers?: StickerDefinition[];
   generatedPics?: GeneratedPicture[];
+  onPicturePress?: (picture: GeneratedPicture) => void;
   onPictureLongPress?: (picture: GeneratedPicture) => void;
 }
 
@@ -72,10 +73,12 @@ function splitRichContent(
 function GeneratedPictureCard({
   picture,
   prompt,
+  onPress,
   onLongPress,
 }: {
   picture: GeneratedPicture;
   prompt: string;
+  onPress?: () => void;
   onLongPress?: () => void;
 }) {
   const isDone = picture.status === 'done' && !!picture.imageUri;
@@ -91,6 +94,7 @@ function GeneratedPictureCard({
   return (
     <Pressable
       style={styles.pictureShell}
+      onPress={isDone ? onPress : undefined}
       onLongPress={onLongPress}
       accessibilityLabel={`AI 生成图片：${picture.prompt || prompt}`}
     >
@@ -117,6 +121,7 @@ export function StickerContent({
   markdownRules,
   stickers,
   generatedPics,
+  onPicturePress,
   onPictureLongPress,
 }: Props) {
   colors = useThemeColors();
@@ -151,6 +156,7 @@ export function StickerContent({
               key={`picture-${index}-${chunk.picture.tokenIndex}`}
               picture={chunk.picture}
               prompt={chunk.prompt}
+              onPress={() => onPicturePress?.(chunk.picture)}
               onLongPress={() => onPictureLongPress?.(chunk.picture)}
             />
           );
