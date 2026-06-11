@@ -111,6 +111,54 @@ export interface HotboardConfig {
   platforms: string;
 }
 
+export interface QQBotConfig {
+  enabled: boolean;
+  backendUrl: string;
+  controlToken: string;
+  appId: string;
+  appSecret: string;
+  sandbox: boolean;
+  autoConnect: boolean;
+  allowDirectMessages: boolean;
+  allowGuildMentions: boolean;
+  openAiBaseUrl: string;
+  openAiApiKey: string;
+  model: string;
+  systemPrompt: string;
+  qqSystemPrompt: string;
+  wechatSystemPrompt: string;
+  temperature: number;
+  maxOutputTokens: number;
+  historyLimit: number;
+  memoryVaultEnabled: boolean;
+  memoryVaultBaseUrl: string;
+  memoryVaultTopK: number;
+  memoryVaultTokenBudget: number;
+  memoryVaultMaxToolCalls: number;
+  webSearchEnabled: boolean;
+  tavilyApiKey: string;
+  webSearchMaxResults: number;
+  mcpEnabled: boolean;
+  mcpMaxToolCalls: number;
+  mcpServers: McpServerConfig[];
+  ttsEnabled: boolean;
+  ttsWithText: boolean;
+  ttsGroupId: string;
+  ttsApiKey: string;
+  ttsModel: string;
+  ttsVoiceId: string;
+  ttsSpeed: number;
+  ttsVol: number;
+  ttsPitch: number;
+  messageBatchEnabled: boolean;
+  messageBatchWindowMs: number;
+  stickersEnabled: boolean;
+  wechatEnabled: boolean;
+  wechatAutoConnect: boolean;
+  wechatAccountId: string;
+  wechatBaseUrl: string;
+}
+
 export interface NativeToolConfig {
   deviceInfoEnabled: boolean;
   batteryStatusEnabled: boolean;
@@ -423,6 +471,7 @@ interface SettingsState {
   webPageReaderConfig: WebPageReaderConfig;
   webInteractionConfig: WebInteractionConfig;
   hotboardConfig: HotboardConfig;
+  qqBotConfig: QQBotConfig;
   nativeToolConfig: NativeToolConfig;
   shizukuFileConfig: ShizukuFileConfig;
   mcpToolConfig: McpToolConfig;
@@ -449,6 +498,7 @@ interface SettingsState {
   setWebPageReaderConfig: (config: Partial<WebPageReaderConfig>) => void;
   setWebInteractionConfig: (config: Partial<WebInteractionConfig>) => void;
   setHotboardConfig: (config: Partial<HotboardConfig>) => void;
+  setQqBotConfig: (config: Partial<QQBotConfig>) => void;
   setNativeToolConfig: (config: Partial<NativeToolConfig>) => void;
   setShizukuFileConfig: (config: Partial<ShizukuFileConfig>) => void;
   setMcpToolConfig: (config: Partial<McpToolConfig>) => void;
@@ -523,6 +573,53 @@ export const useSettingsStore = create<SettingsState>()(
         enabled: false,
         apiKey: '',
         platforms: DEFAULT_HOTBOARD_PLATFORM_TYPES.join(','),
+      },
+      qqBotConfig: {
+        enabled: false,
+        backendUrl: 'http://127.0.0.1:8788',
+        controlToken: '',
+        appId: '',
+        appSecret: '',
+        sandbox: true,
+        autoConnect: true,
+        allowDirectMessages: true,
+        allowGuildMentions: true,
+        openAiBaseUrl: '',
+        openAiApiKey: '',
+        model: '',
+        systemPrompt: '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。',
+        qqSystemPrompt: '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。',
+        wechatSystemPrompt: '你是 YSClaude 的微信机器人入口。请用自然、简洁、友好的中文回复微信用户。',
+        temperature: 0.7,
+        maxOutputTokens: 1200,
+        historyLimit: 16,
+        memoryVaultEnabled: false,
+        memoryVaultBaseUrl: '',
+        memoryVaultTopK: 5,
+        memoryVaultTokenBudget: 2000,
+        memoryVaultMaxToolCalls: 3,
+        webSearchEnabled: false,
+        tavilyApiKey: '',
+        webSearchMaxResults: 5,
+        mcpEnabled: false,
+        mcpMaxToolCalls: 6,
+        mcpServers: [],
+        ttsEnabled: false,
+        ttsWithText: false,
+        ttsGroupId: '',
+        ttsApiKey: '',
+        ttsModel: 'speech-02-hd',
+        ttsVoiceId: '',
+        ttsSpeed: 1,
+        ttsVol: 1,
+        ttsPitch: 0,
+        messageBatchEnabled: true,
+        messageBatchWindowMs: 6000,
+        stickersEnabled: false,
+        wechatEnabled: false,
+        wechatAutoConnect: true,
+        wechatAccountId: '',
+        wechatBaseUrl: '',
       },
       nativeToolConfig: {
         deviceInfoEnabled: false,
@@ -626,6 +723,8 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ webInteractionConfig: { ...state.webInteractionConfig, ...config } })),
       setHotboardConfig: (config) =>
         set((state) => ({ hotboardConfig: { ...state.hotboardConfig, ...config } })),
+      setQqBotConfig: (config) =>
+        set((state) => ({ qqBotConfig: { ...state.qqBotConfig, ...config } })),
       setNativeToolConfig: (config) =>
         set((state) => ({ nativeToolConfig: { ...state.nativeToolConfig, ...config } })),
       setShizukuFileConfig: (config) =>
@@ -879,6 +978,7 @@ export const useSettingsStore = create<SettingsState>()(
         webPageReaderConfig: state.webPageReaderConfig,
         webInteractionConfig: state.webInteractionConfig,
         hotboardConfig: state.hotboardConfig,
+        qqBotConfig: state.qqBotConfig,
         nativeToolConfig: state.nativeToolConfig,
         shizukuFileConfig: state.shizukuFileConfig,
         mcpToolConfig: state.mcpToolConfig,

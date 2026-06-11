@@ -10,7 +10,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { lightColors, useThemeColors, type ThemeColors } from '../src/theme/colors';
 
 import { fonts } from '../src/theme/fonts';
-import { useSettingsStore, NamedAPIConfig, TTSConfig, MemoryVaultConfig, WebSearchConfig, type ChatInputIconKey, type ChatInputAppearanceStyle, type AssistantBubbleAppearanceStyle, type ShizukuFileRoot, type StickerOwner, type CustomSticker } from '../src/stores/settings';
+import { useSettingsStore, NamedAPIConfig, TTSConfig, MemoryVaultConfig, WebSearchConfig, type ChatInputIconKey, type ChatInputAppearanceStyle, type AssistantBubbleAppearanceStyle, type ShizukuFileRoot, type StickerOwner, type CustomSticker, type QQBotConfig } from '../src/stores/settings';
 import { TopBarIcon, TOP_BAR_ICON_ITEMS } from '../src/components/TopBarIcon';
 import type { TopBarIconKey } from '../src/utils/topBarIconTypes';
 import { useChatStore } from '../src/stores/chat';
@@ -303,6 +303,14 @@ function topBarIconExtension(asset: ImagePicker.ImagePickerAsset): string {
   if (cleanUri.endsWith('.jpeg')) return '.jpg';
   if (cleanUri.endsWith('.jpg')) return '.jpg';
   return '.png';
+}
+
+function inferImageMimeType(uri: string): string {
+  const cleanUri = uri.split('?')[0].toLowerCase();
+  if (cleanUri.endsWith('.jpg') || cleanUri.endsWith('.jpeg')) return 'image/jpeg';
+  if (cleanUri.endsWith('.webp')) return 'image/webp';
+  if (cleanUri.endsWith('.gif')) return 'image/gif';
+  return 'image/png';
 }
 
 async function copyTopBarIcon(asset: ImagePicker.ImagePickerAsset, key: TopBarIconKey): Promise<string> {
@@ -3218,11 +3226,17 @@ function TTSConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
 
 function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const {
+    apiConfigs,
+    activeConfigIndex,
+    systemPrompt,
+    ttsConfig,
+    stickerConfig,
     memoryVaultConfig,
     webSearchConfig,
     webPageReaderConfig,
     webInteractionConfig,
     hotboardConfig,
+    qqBotConfig,
     nativeToolConfig,
     shizukuFileConfig,
     mcpToolConfig,
@@ -3232,11 +3246,13 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     setWebPageReaderConfig,
     setWebInteractionConfig,
     setHotboardConfig,
+    setQqBotConfig,
     setNativeToolConfig,
     setShizukuFileConfig,
     setMcpToolConfig,
     setToolSettingsUiConfig,
   } = useSettingsStore();
+  const activeApiConfig = apiConfigs[activeConfigIndex] || null;
 
   // 记忆库本地 state
   const [mvEnabled, setMvEnabled] = useState(memoryVaultConfig.enabled);
@@ -3266,6 +3282,100 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     normalizeHotboardPlatformTypes(hotboardConfig?.platforms || DEFAULT_HOTBOARD_PLATFORM_TYPES.join(','))
   );
   const [hbPlatformsExpanded, setHbPlatformsExpanded] = useState(false);
+
+  const [qqEnabled, setQqEnabled] = useState(!!qqBotConfig?.enabled);
+  const [qqBackendUrl, setQqBackendUrl] = useState(qqBotConfig?.backendUrl || 'http://127.0.0.1:8788');
+  const [qqControlToken, setQqControlToken] = useState(qqBotConfig?.controlToken || '');
+  const [qqAppId, setQqAppId] = useState(qqBotConfig?.appId || '');
+  const [qqAppSecret, setQqAppSecret] = useState(qqBotConfig?.appSecret || '');
+  const [qqSandbox, setQqSandbox] = useState(qqBotConfig?.sandbox ?? true);
+  const [qqAutoConnect, setQqAutoConnect] = useState(qqBotConfig?.autoConnect ?? true);
+  const [qqAllowDirectMessages, setQqAllowDirectMessages] = useState(qqBotConfig?.allowDirectMessages ?? true);
+  const [qqAllowGuildMentions, setQqAllowGuildMentions] = useState(qqBotConfig?.allowGuildMentions ?? true);
+  const [qqOpenAiBaseUrl, setQqOpenAiBaseUrl] = useState(qqBotConfig?.openAiBaseUrl || '');
+  const [qqOpenAiApiKey, setQqOpenAiApiKey] = useState(qqBotConfig?.openAiApiKey || '');
+  const [qqModel, setQqModel] = useState(qqBotConfig?.model || '');
+  const [qqSystemPrompt, setQqSystemPrompt] = useState(qqBotConfig?.qqSystemPrompt || qqBotConfig?.systemPrompt || '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。');
+  const [wechatSystemPrompt, setWechatSystemPrompt] = useState(qqBotConfig?.wechatSystemPrompt || '你是 YSClaude 的微信机器人入口。请用自然、简洁、友好的中文回复微信用户。');
+  const [qqTemperature, setQqTemperature] = useState(String(qqBotConfig?.temperature ?? 0.7));
+  const [qqMaxOutputTokens, setQqMaxOutputTokens] = useState(String(qqBotConfig?.maxOutputTokens ?? 1200));
+  const [qqHistoryLimit, setQqHistoryLimit] = useState(String(qqBotConfig?.historyLimit ?? 16));
+  const [qqMemoryVaultEnabled, setQqMemoryVaultEnabled] = useState(!!qqBotConfig?.memoryVaultEnabled);
+  const [qqMemoryVaultBaseUrl, setQqMemoryVaultBaseUrl] = useState(qqBotConfig?.memoryVaultBaseUrl || '');
+  const [qqMemoryVaultTopK, setQqMemoryVaultTopK] = useState(String(qqBotConfig?.memoryVaultTopK ?? 5));
+  const [qqMemoryVaultTokenBudget, setQqMemoryVaultTokenBudget] = useState(String(qqBotConfig?.memoryVaultTokenBudget ?? 2000));
+  const [qqMemoryVaultMaxToolCalls, setQqMemoryVaultMaxToolCalls] = useState(String(qqBotConfig?.memoryVaultMaxToolCalls ?? 3));
+  const [qqWebSearchEnabled, setQqWebSearchEnabled] = useState(!!qqBotConfig?.webSearchEnabled);
+  const [qqTavilyApiKey, setQqTavilyApiKey] = useState(qqBotConfig?.tavilyApiKey || '');
+  const [qqWebSearchMaxResults, setQqWebSearchMaxResults] = useState(String(qqBotConfig?.webSearchMaxResults ?? 5));
+  const [qqMcpEnabled, setQqMcpEnabled] = useState(!!qqBotConfig?.mcpEnabled);
+  const [qqMcpMaxToolCalls, setQqMcpMaxToolCalls] = useState(String(qqBotConfig?.mcpMaxToolCalls ?? 6));
+  const [qqMcpServers, setQqMcpServers] = useState(qqBotConfig?.mcpServers || []);
+  const [qqTtsEnabled, setQqTtsEnabled] = useState(!!qqBotConfig?.ttsEnabled);
+  const [qqMessageBatchEnabled, setQqMessageBatchEnabled] = useState(qqBotConfig?.messageBatchEnabled ?? true);
+  const [qqMessageBatchWindowSeconds, setQqMessageBatchWindowSeconds] = useState(String((qqBotConfig?.messageBatchWindowMs ?? 6000) / 1000));
+  const [qqStickersEnabled, setQqStickersEnabled] = useState(!!qqBotConfig?.stickersEnabled);
+  const [wechatEnabled, setWechatEnabled] = useState(!!qqBotConfig?.wechatEnabled);
+  const [wechatAutoConnect, setWechatAutoConnect] = useState(qqBotConfig?.wechatAutoConnect ?? true);
+  const [wechatAccountId, setWechatAccountId] = useState(qqBotConfig?.wechatAccountId || '');
+  const [wechatBaseUrl, setWechatBaseUrl] = useState(qqBotConfig?.wechatBaseUrl || '');
+  const [wechatBusy, setWechatBusy] = useState(false);
+  const [botPanelTab, setBotPanelTab] = useState<'qq' | 'wechat'>('qq');
+  const [qqBackendStatus, setQqBackendStatus] = useState('尚未检测');
+  const [qqContextStatus, setQqContextStatus] = useState('尚未刷新');
+  const [qqContextConversations, setQqContextConversations] = useState<Array<{ key: string; updatedAt: number; messageCount: number; preview: string; lastRole: string }>>([]);
+  const [qqSelectedConversationKey, setQqSelectedConversationKey] = useState<string | null>(null);
+  const [qqSelectedConversationMessages, setQqSelectedConversationMessages] = useState<Array<{ index: number; role: string; content: string; preview: string }>>([]);
+  const [qqSelectedConversationPage, setQqSelectedConversationPage] = useState(1);
+  const [qqSelectedConversationTotalPages, setQqSelectedConversationTotalPages] = useState(1);
+  const [qqSelectedConversationMessageCount, setQqSelectedConversationMessageCount] = useState(0);
+  const [qqSelectedMessageIndexes, setQqSelectedMessageIndexes] = useState<number[]>([]);
+  const [qqBackendTesting, setQqBackendTesting] = useState(false);
+  const [qqBackendSyncing, setQqBackendSyncing] = useState(false);
+  const [qqContextRefreshing, setQqContextRefreshing] = useState(false);
+  const [qqContextClearing, setQqContextClearing] = useState(false);
+  const [qqConversationLoading, setQqConversationLoading] = useState(false);
+  const [qqMessageDeleting, setQqMessageDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!qqBotConfig) return;
+    setQqEnabled(!!qqBotConfig.enabled);
+    setQqBackendUrl(qqBotConfig.backendUrl || 'http://127.0.0.1:8788');
+    setQqControlToken(qqBotConfig.controlToken || '');
+    setQqAppId(qqBotConfig.appId || '');
+    setQqAppSecret(qqBotConfig.appSecret || '');
+    setQqSandbox(qqBotConfig.sandbox ?? true);
+    setQqAutoConnect(qqBotConfig.autoConnect ?? true);
+    setQqAllowDirectMessages(qqBotConfig.allowDirectMessages ?? true);
+    setQqAllowGuildMentions(qqBotConfig.allowGuildMentions ?? true);
+    setQqOpenAiBaseUrl(qqBotConfig.openAiBaseUrl || '');
+    setQqOpenAiApiKey(qqBotConfig.openAiApiKey || '');
+    setQqModel(qqBotConfig.model || '');
+    setQqSystemPrompt(qqBotConfig.qqSystemPrompt || qqBotConfig.systemPrompt || '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。');
+    setWechatSystemPrompt(qqBotConfig.wechatSystemPrompt || '你是 YSClaude 的微信机器人入口。请用自然、简洁、友好的中文回复微信用户。');
+    setQqTemperature(String(qqBotConfig.temperature ?? 0.7));
+    setQqMaxOutputTokens(String(qqBotConfig.maxOutputTokens ?? 1200));
+    setQqHistoryLimit(String(qqBotConfig.historyLimit ?? 16));
+    setQqMemoryVaultEnabled(!!qqBotConfig.memoryVaultEnabled);
+    setQqMemoryVaultBaseUrl(qqBotConfig.memoryVaultBaseUrl || '');
+    setQqMemoryVaultTopK(String(qqBotConfig.memoryVaultTopK ?? 5));
+    setQqMemoryVaultTokenBudget(String(qqBotConfig.memoryVaultTokenBudget ?? 2000));
+    setQqMemoryVaultMaxToolCalls(String(qqBotConfig.memoryVaultMaxToolCalls ?? 3));
+    setQqWebSearchEnabled(!!qqBotConfig.webSearchEnabled);
+    setQqTavilyApiKey(qqBotConfig.tavilyApiKey || '');
+    setQqWebSearchMaxResults(String(qqBotConfig.webSearchMaxResults ?? 5));
+    setQqMcpEnabled(!!qqBotConfig.mcpEnabled);
+    setQqMcpMaxToolCalls(String(qqBotConfig.mcpMaxToolCalls ?? 6));
+    setQqMcpServers(qqBotConfig.mcpServers || []);
+    setQqTtsEnabled(!!qqBotConfig.ttsEnabled);
+    setQqMessageBatchEnabled(qqBotConfig.messageBatchEnabled ?? true);
+    setQqMessageBatchWindowSeconds(String((qqBotConfig.messageBatchWindowMs ?? 6000) / 1000));
+    setQqStickersEnabled(!!qqBotConfig.stickersEnabled);
+    setWechatEnabled(!!qqBotConfig.wechatEnabled);
+    setWechatAutoConnect(qqBotConfig.wechatAutoConnect ?? true);
+    setWechatAccountId(qqBotConfig.wechatAccountId || '');
+    setWechatBaseUrl(qqBotConfig.wechatBaseUrl || '');
+  }, [qqBotConfig]);
 
   // Shizuku 文件访问本地 state
   const [shizukuEnabled, setShizukuEnabled] = useState(!!shizukuFileConfig?.enabled);
@@ -3386,6 +3496,543 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       platforms: hbPlatformTypes.join(','),
     });
     showToast(hbEnabled ? 'AI 网页巡游热榜配置已保存' : 'AI 网页巡游热榜已关闭');
+  }
+
+  function buildQqBotConfigDraft(): QQBotConfig {
+    const temperature = parseFloat(qqTemperature);
+    const maxOutputTokens = parseInt(qqMaxOutputTokens, 10);
+    const historyLimit = parseInt(qqHistoryLimit, 10);
+    const memoryVaultTopK = parseInt(qqMemoryVaultTopK, 10);
+    const memoryVaultTokenBudget = parseInt(qqMemoryVaultTokenBudget, 10);
+    const memoryVaultMaxToolCalls = parseInt(qqMemoryVaultMaxToolCalls, 10);
+    const webSearchMaxResults = parseInt(qqWebSearchMaxResults, 10);
+    const mcpMaxToolCalls = parseInt(qqMcpMaxToolCalls, 10);
+    const messageBatchWindowSeconds = parseFloat(qqMessageBatchWindowSeconds);
+
+    return {
+      enabled: qqEnabled,
+      backendUrl: qqBackendUrl.trim().replace(/\/$/, ''),
+      controlToken: qqControlToken.trim(),
+      appId: qqAppId.trim(),
+      appSecret: qqAppSecret.trim(),
+      sandbox: qqSandbox,
+      autoConnect: qqAutoConnect,
+      allowDirectMessages: qqAllowDirectMessages,
+      allowGuildMentions: qqAllowGuildMentions,
+      openAiBaseUrl: qqOpenAiBaseUrl.trim().replace(/\/$/, ''),
+      openAiApiKey: qqOpenAiApiKey.trim(),
+      model: qqModel.trim(),
+      systemPrompt: qqSystemPrompt.trim() || '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。',
+      qqSystemPrompt: qqSystemPrompt.trim() || '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。',
+      wechatSystemPrompt: wechatSystemPrompt.trim() || '你是 YSClaude 的微信机器人入口。请用自然、简洁、友好的中文回复微信用户。',
+      temperature: isNaN(temperature) ? 0.7 : Math.min(2, Math.max(0, temperature)),
+      maxOutputTokens: isNaN(maxOutputTokens) || maxOutputTokens <= 0 ? 1200 : maxOutputTokens,
+      historyLimit: isNaN(historyLimit) || historyLimit <= 0 ? 16 : historyLimit,
+      memoryVaultEnabled: qqMemoryVaultEnabled,
+      memoryVaultBaseUrl: qqMemoryVaultBaseUrl.trim().replace(/\/$/, ''),
+      memoryVaultTopK: isNaN(memoryVaultTopK) || memoryVaultTopK <= 0 ? 5 : memoryVaultTopK,
+      memoryVaultTokenBudget: isNaN(memoryVaultTokenBudget) || memoryVaultTokenBudget <= 0 ? 2000 : memoryVaultTokenBudget,
+      memoryVaultMaxToolCalls: isNaN(memoryVaultMaxToolCalls) || memoryVaultMaxToolCalls <= 0 ? 3 : memoryVaultMaxToolCalls,
+      webSearchEnabled: qqWebSearchEnabled,
+      tavilyApiKey: qqTavilyApiKey.trim(),
+      webSearchMaxResults: isNaN(webSearchMaxResults) || webSearchMaxResults <= 0 ? 5 : webSearchMaxResults,
+      mcpEnabled: qqMcpEnabled,
+      mcpMaxToolCalls: isNaN(mcpMaxToolCalls) || mcpMaxToolCalls <= 0 ? 6 : mcpMaxToolCalls,
+      mcpServers: qqMcpServers,
+      ttsEnabled: qqTtsEnabled,
+      ttsWithText: false,
+      ttsGroupId: ttsConfig.groupId.trim(),
+      ttsApiKey: ttsConfig.apiKey.trim(),
+      ttsModel: ttsConfig.model.trim() || 'speech-02-hd',
+      ttsVoiceId: ttsConfig.voiceId.trim(),
+      ttsSpeed: ttsConfig.speed,
+      ttsVol: ttsConfig.vol,
+      ttsPitch: ttsConfig.pitch,
+      messageBatchEnabled: qqMessageBatchEnabled,
+      messageBatchWindowMs: isNaN(messageBatchWindowSeconds) || messageBatchWindowSeconds <= 0
+        ? 6000
+        : Math.round(messageBatchWindowSeconds * 1000),
+      stickersEnabled: qqStickersEnabled,
+      wechatEnabled,
+      wechatAutoConnect,
+      wechatAccountId: wechatAccountId.trim(),
+      wechatBaseUrl: wechatBaseUrl.trim().replace(/\/$/, ''),
+    };
+  }
+
+  function validateQqBotBackendUrl(config: QQBotConfig): boolean {
+    if (!config.backendUrl || !/^https?:\/\//i.test(config.backendUrl)) {
+      Alert.alert('提示', '后端服务地址必须以 http:// 或 https:// 开头');
+      return false;
+    }
+    return true;
+  }
+
+  function validateQqBotConfig(config: QQBotConfig): boolean {
+    if (!validateQqBotBackendUrl(config)) return false;
+    if (config.enabled && (!config.appId || !config.appSecret)) {
+      Alert.alert('提示', '启用 QQ 机器人时请填写 AppID 和 AppSecret');
+      return false;
+    }
+    if (config.enabled && (!config.openAiBaseUrl || !config.openAiApiKey || !config.model)) {
+      Alert.alert('提示', '启用 QQ 机器人时请填写 OpenAI 兼容接口、密钥和模型名');
+      return false;
+    }
+    if (config.memoryVaultEnabled && !config.memoryVaultBaseUrl) {
+      Alert.alert('提示', '启用 QQ 机器人记忆库时请填写记忆库地址');
+      return false;
+    }
+    if (config.webSearchEnabled && !config.tavilyApiKey) {
+      Alert.alert('提示', '启用 QQ 机器人联网搜索时请填写 Tavily 密钥');
+      return false;
+    }
+    if (config.ttsEnabled && (!config.ttsGroupId || !config.ttsApiKey || !config.ttsVoiceId)) {
+      Alert.alert('提示', '启用 QQ 机器人语音 TTS 时，请先在 TTS 配置中填写 MiniMax Group ID、API Key 和 Voice ID');
+      return false;
+    }
+    return true;
+  }
+
+  function makeQqBotControlHeaders(config: QQBotConfig): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (config.controlToken) {
+      headers.Authorization = `Bearer ${config.controlToken}`;
+    }
+    return headers;
+  }
+
+  function handleSaveQqBot(): boolean {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return false;
+    setQqBotConfig(draft);
+    if (draft.enabled && (!draft.appId || !draft.appSecret || !draft.openAiBaseUrl || !draft.openAiApiKey || !draft.model)) {
+      showToast('QQ 机器人草稿已保存，启动前还需补全必填项');
+    } else {
+      showToast(draft.enabled ? 'QQ 机器人配置已保存' : 'QQ 机器人已关闭');
+    }
+    return true;
+  }
+
+  function handleImportMainChatConfig() {
+    if (!activeApiConfig) {
+      Alert.alert('提示', '当前没有可导入的主聊天 API 配置');
+      return;
+    }
+    setQqOpenAiBaseUrl((activeApiConfig.baseUrl || '').trim().replace(/\/$/, ''));
+    setQqOpenAiApiKey((activeApiConfig.apiKey || '').trim());
+    setQqModel((activeApiConfig.model || '').trim());
+    setQqSystemPrompt(systemPrompt || '你是 YSClaude 的 QQ 机器人入口。请用自然、简洁、友好的中文回复 QQ 用户。');
+    setQqMemoryVaultEnabled(!!memoryVaultConfig.enabled);
+    setQqMemoryVaultBaseUrl(memoryVaultConfig.baseUrl || '');
+    setQqMemoryVaultTopK(String(memoryVaultConfig.topK ?? 5));
+    setQqMemoryVaultTokenBudget(String(memoryVaultConfig.tokenBudget ?? 2000));
+    setQqMemoryVaultMaxToolCalls(String(memoryVaultConfig.maxToolCalls ?? 3));
+    setQqWebSearchEnabled(!!webSearchConfig.enabled);
+    setQqTavilyApiKey(webSearchConfig.tavilyApiKey || '');
+    setQqWebSearchMaxResults(String(webSearchConfig.maxResults ?? 5));
+    setQqMcpEnabled(!!mcpToolConfig.enabled);
+    setQqMcpMaxToolCalls(String(mcpToolConfig.maxToolCalls ?? 6));
+    setQqMcpServers(mcpToolConfig.servers || []);
+    setQqTtsEnabled(!!ttsConfig.groupId && !!ttsConfig.apiKey && !!ttsConfig.voiceId);
+    setQqMessageBatchEnabled(true);
+    setQqMessageBatchWindowSeconds('6');
+    setQqStickersEnabled(getQqStickerCount() > 0);
+    showToast('已导入主聊天 API、QQ System Prompt、记忆库、联网搜索、MCP 工具、TTS 开关、消息合并和表情包');
+  }
+
+  function handleImportMainChatMcpConfig() {
+    setQqMcpEnabled(!!mcpToolConfig.enabled);
+    setQqMcpMaxToolCalls(String(mcpToolConfig.maxToolCalls ?? 6));
+    setQqMcpServers(mcpToolConfig.servers || []);
+    showToast('已导入主聊天 MCP 工具配置');
+  }
+
+  function getQqStickerCount() {
+    return getQqStickerCandidates().length;
+  }
+
+  function getQqStickerCandidates() {
+    return (stickerConfig?.assistantStickers || [])
+      .filter((sticker) => !!sticker.uri && !!normalizeStickerName(sticker.name));
+  }
+
+  async function buildQqBotStickerPayload() {
+    if (!qqStickersEnabled) return [];
+    const stickers = getQqStickerCandidates().slice(0, 40);
+    const payload: Array<{ name: string; mimeType: string; dataBase64: string }> = [];
+    for (const sticker of stickers) {
+      try {
+        const uri = sticker.uri || '';
+        const dataBase64 = await readStickerImageAsBase64(uri);
+        if (!dataBase64) continue;
+        payload.push({
+          name: normalizeStickerName(sticker.name),
+          mimeType: inferStickerMimeType(uri, dataBase64),
+          dataBase64,
+        });
+      } catch (error) {
+        console.warn('[settings] skip QQ sticker sync', sticker.name, error);
+      }
+    }
+    return payload;
+  }
+
+  async function readStickerImageAsBase64(uri: string): Promise<string> {
+    if (/^https?:\/\//i.test(uri)) {
+      return fetchImageAsBase64(uri);
+    }
+    const file = new File(uri);
+    return file.base64();
+  }
+
+  async function fetchImageAsBase64(uri: string): Promise<string> {
+    const resp = await fetch(uri);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function inferStickerMimeType(uri: string, dataBase64: string): string {
+    const uriMimeType = inferImageMimeType(uri);
+    if (uriMimeType !== 'image/png') return uriMimeType;
+    if (dataBase64.startsWith('/9j/')) return 'image/jpeg';
+    if (dataBase64.startsWith('R0lG')) return 'image/gif';
+    if (dataBase64.startsWith('UklGR')) return 'image/webp';
+    return uriMimeType;
+  }
+
+  function getQqMcpEnabledServerCount() {
+    return qqMcpServers.filter((server) => server.enabled).length;
+  }
+
+  function getQqMcpEnabledToolCount() {
+    return qqMcpServers.reduce(
+      (count, server) =>
+        server.enabled
+          ? count + (server.tools || []).filter((tool) => tool.enabled !== false).length
+          : count,
+      0
+    );
+  }
+
+  async function handleTestQqBotBackend() {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotConfig({ ...draft, enabled: false })) return;
+    setQqBackendTesting(true);
+    try {
+      const resp = await fetch(`${draft.backendUrl}/health`, {
+        method: 'GET',
+        headers: makeQqBotControlHeaders(draft),
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+      let statusText = '后端服务正常';
+      try {
+        const json = JSON.parse(text);
+        statusText = json?.status ? `后端：${json.status}` : statusText;
+        if (json?.qq?.connected !== undefined) {
+          statusText += json.qq.connected ? '，QQ 已连接' : '，QQ 未连接';
+        }
+      } catch {
+        // Plain text health responses are acceptable.
+      }
+      setQqBackendStatus(statusText);
+      showToast(statusText);
+    } catch (error: any) {
+      const message = error?.message || '无法连接 QQ 机器人后端';
+      setQqBackendStatus(message);
+      Alert.alert('连接失败', message);
+    } finally {
+      setQqBackendTesting(false);
+    }
+  }
+
+  async function handleSyncQqBotBackend() {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotConfig(draft)) return;
+    setQqBotConfig(draft);
+    setQqBackendSyncing(true);
+    try {
+      const backendConfig = Object.fromEntries(
+        Object.entries(draft).filter(([key]) => key !== 'backendUrl' && key !== 'controlToken')
+      );
+      const stickerCandidateCount = getQqStickerCount();
+      const stickerPayload = await buildQqBotStickerPayload();
+      backendConfig.stickers = stickerPayload;
+      const resp = await fetch(`${draft.backendUrl}/config`, {
+        method: 'PUT',
+        headers: {
+          ...makeQqBotControlHeaders(draft),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(backendConfig),
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+      let backendStickerCount = stickerPayload.length;
+      try {
+        const json = JSON.parse(text);
+        backendStickerCount = Array.isArray(json?.config?.stickers) ? json.config.stickers.length : backendStickerCount;
+      } catch {
+        // Non-JSON responses are handled by the HTTP status above.
+      }
+      const stickerStatus = qqStickersEnabled
+        ? `表情包 ${backendStickerCount}/${stickerCandidateCount}`
+        : '表情包未启用';
+      setQqBackendStatus(`配置已同步到后端，${stickerStatus}`);
+      showToast(`QQ/微信机器人配置已同步，${stickerStatus}`);
+    } catch (error: any) {
+      const message = error?.message || '无法同步 QQ 机器人后端';
+      setQqBackendStatus(message);
+      Alert.alert('同步失败', message);
+    } finally {
+      setQqBackendSyncing(false);
+    }
+  }
+
+  async function callWechatControl(action: 'login' | 'start' | 'stop' | 'restart' | 'logout') {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return;
+    setQqBotConfig(draft);
+    setWechatBusy(true);
+    if (action === 'login') {
+      Alert.alert('微信扫码登录', '点击确定后请打开 Zeabur 服务日志查看二维码并用微信扫码。二维码过期后可重新点击登录。');
+    }
+    try {
+      const resp = await fetch(`${draft.backendUrl}/control/wechat/${action}`, {
+        method: 'POST',
+        headers: makeQqBotControlHeaders(draft),
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+      const json = text ? JSON.parse(text) : {};
+      const accountId = json?.accountId || json?.wechat?.accountId || '';
+      if (accountId) {
+        setWechatAccountId(accountId);
+        setQqBotConfig({ wechatAccountId: accountId });
+      }
+      setQqBackendStatus(`微信通道：${json?.wechat?.state || '已更新'}`);
+      showToast(action === 'login' ? '微信扫码登录完成' : '微信通道状态已更新');
+    } catch (error: any) {
+      const message = error?.message || '微信通道控制失败';
+      setQqBackendStatus(message);
+      Alert.alert('微信通道失败', message);
+    } finally {
+      setWechatBusy(false);
+    }
+  }
+
+  function getBotPanelPlatformLabel() {
+    return botPanelTab === 'wechat' ? '微信' : 'QQ';
+  }
+
+  function getConversationPlatformLabel(key?: string | null) {
+    return key?.startsWith('wechat:') ? '微信' : 'QQ';
+  }
+
+  function getBotPanelConversationQuery() {
+    return `platform=${botPanelTab}`;
+  }
+
+  function getVisibleBotPanelConversations() {
+    return qqContextConversations.filter((conversation) =>
+      botPanelTab === 'wechat'
+        ? conversation.key.startsWith('wechat:')
+        : /^(c2c|dm|group|channel):/.test(conversation.key)
+    );
+  }
+
+  async function handleRefreshQqBotContexts() {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return;
+    setQqContextRefreshing(true);
+    try {
+      const resp = await fetch(`${draft.backendUrl}/conversations?${getBotPanelConversationQuery()}`, {
+        method: 'GET',
+        headers: makeQqBotControlHeaders(draft),
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+      const json = JSON.parse(text);
+      const count = Number(json?.count || 0);
+      setQqContextConversations(Array.isArray(json?.conversations) ? json.conversations : []);
+      setQqContextStatus(`后端保存了 ${count} 个${getBotPanelPlatformLabel()}会话上下文`);
+      if (qqSelectedConversationKey && !json.conversations?.some((conversation: any) => conversation.key === qqSelectedConversationKey)) {
+        setQqSelectedConversationKey(null);
+        setQqSelectedConversationMessages([]);
+        setQqSelectedMessageIndexes([]);
+      }
+      showToast(`${getBotPanelPlatformLabel()}上下文：${count} 个会话`);
+    } catch (error: any) {
+      const message = error?.message || `无法读取${getBotPanelPlatformLabel()}上下文`;
+      setQqContextStatus(message);
+      Alert.alert('读取失败', message);
+    } finally {
+      setQqContextRefreshing(false);
+    }
+  }
+
+  function handleClearQqBotContexts() {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return;
+    const platformLabel = getBotPanelPlatformLabel();
+    Alert.alert(`清空${platformLabel}上下文`, `确定清空后端保存的全部${platformLabel}会话上下文吗？这不会删除平台账号或 YSClaude 本地聊天记录。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '清空',
+        style: 'destructive',
+        onPress: async () => {
+          setQqContextClearing(true);
+          try {
+            const resp = await fetch(`${draft.backendUrl}/conversations?${getBotPanelConversationQuery()}`, {
+              method: 'DELETE',
+              headers: makeQqBotControlHeaders(draft),
+            });
+            const text = await resp.text();
+            if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+            const json = JSON.parse(text);
+            const deleted = Number(json?.deleted || 0);
+            setQqContextStatus(`后端保存了 0 个${platformLabel}会话上下文`);
+            setQqContextConversations([]);
+            setQqSelectedConversationKey(null);
+            setQqSelectedConversationMessages([]);
+            setQqSelectedMessageIndexes([]);
+            showToast(`已清空 ${deleted} 个${platformLabel}会话上下文`);
+          } catch (error: any) {
+            const message = error?.message || `无法清空${platformLabel}上下文`;
+            Alert.alert('清空失败', message);
+          } finally {
+            setQqContextClearing(false);
+          }
+        },
+      },
+    ]);
+  }
+
+  async function handleOpenQqConversation(key: string, page = 1) {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return;
+    setQqSelectedConversationKey(key);
+    setQqConversationLoading(true);
+    try {
+      const resp = await fetch(`${draft.backendUrl}/conversations/${encodeURIComponent(key)}?page=${page}&limit=10`, {
+        method: 'GET',
+        headers: makeQqBotControlHeaders(draft),
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+      const json = JSON.parse(text);
+      setQqSelectedConversationMessages(Array.isArray(json?.messages) ? json.messages : []);
+      setQqSelectedConversationPage(Number(json?.page || page));
+      setQqSelectedConversationTotalPages(Number(json?.totalPages || 1));
+      setQqSelectedConversationMessageCount(Number(json?.messageCount || 0));
+      setQqSelectedMessageIndexes([]);
+      setQqContextStatus(`正在查看会话 ${key}`);
+    } catch (error: any) {
+      const message = error?.message || '无法读取会话详情';
+      setQqContextStatus(message);
+      Alert.alert('读取失败', message);
+    } finally {
+      setQqConversationLoading(false);
+    }
+  }
+
+  function toggleQqMessageIndex(index: number) {
+    setQqSelectedMessageIndexes((current) =>
+      current.includes(index)
+        ? current.filter((item) => item !== index)
+        : [...current, index].sort((a, b) => a - b)
+    );
+  }
+
+  function handleDeleteSelectedQqMessages() {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return;
+    if (!qqSelectedConversationKey) {
+      Alert.alert('提示', '请先选择一个会话');
+      return;
+    }
+    if (qqSelectedMessageIndexes.length === 0) {
+      Alert.alert('提示', '请先勾选要删除的消息');
+      return;
+    }
+    Alert.alert('删除消息', `确定删除当前会话里选中的 ${qqSelectedMessageIndexes.length} 条消息吗？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: async () => {
+          setQqMessageDeleting(true);
+          try {
+            const resp = await fetch(`${draft.backendUrl}/conversations/${encodeURIComponent(qqSelectedConversationKey)}/messages/delete`, {
+              method: 'POST',
+              headers: {
+                ...makeQqBotControlHeaders(draft),
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ indexes: qqSelectedMessageIndexes }),
+            });
+            const text = await resp.text();
+            if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+            const json = JSON.parse(text);
+            showToast(`已删除 ${Number(json?.deleted || 0)} 条消息`);
+            await handleRefreshQqBotContexts();
+            const remaining = Number(json?.remaining || 0);
+            const nextTotalPages = Math.max(1, Math.ceil(remaining / 10));
+            await handleOpenQqConversation(qqSelectedConversationKey, Math.min(qqSelectedConversationPage, nextTotalPages));
+          } catch (error: any) {
+            const message = error?.message || '无法删除选定消息';
+            Alert.alert('删除失败', message);
+          } finally {
+            setQqMessageDeleting(false);
+          }
+        },
+      },
+    ]);
+  }
+
+  function handleClearSelectedQqConversation() {
+    const draft = buildQqBotConfigDraft();
+    if (!validateQqBotBackendUrl(draft)) return;
+    if (!qqSelectedConversationKey) {
+      Alert.alert('提示', '请先选择一个会话');
+      return;
+    }
+    const platformLabel = getConversationPlatformLabel(qqSelectedConversationKey);
+    Alert.alert('清除此会话', `确定清空当前${platformLabel}会话的全部上下文吗？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '清空',
+        style: 'destructive',
+        onPress: async () => {
+          setQqMessageDeleting(true);
+          try {
+            const key = qqSelectedConversationKey;
+            const resp = await fetch(`${draft.backendUrl}/conversations/${encodeURIComponent(key)}`, {
+              method: 'DELETE',
+              headers: makeQqBotControlHeaders(draft),
+            });
+            const text = await resp.text();
+            if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+            setQqSelectedConversationKey(null);
+            setQqSelectedConversationMessages([]);
+            setQqSelectedMessageIndexes([]);
+            showToast(`已清空该${platformLabel}会话上下文`);
+            await handleRefreshQqBotContexts();
+          } catch (error: any) {
+            const message = error?.message || '无法清空该会话';
+            Alert.alert('清空失败', message);
+          } finally {
+            setQqMessageDeleting(false);
+          }
+        },
+      },
+    ]);
   }
 
   function toggleHotboardPlatform(type: string) {
@@ -3668,6 +4315,7 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     { key: 'webSearch', name: '联网搜索', intro: '通过 Tavily 搜索互联网，补充实时信息。', enabled: wsEnabled, onValueChange: setWsEnabled, meta: '1 个工具' },
     { key: 'webPageReader', name: '网页读取', intro: '读取链接中的网页正文，可配置渲染服务兜底。', enabled: wprEnabled, onValueChange: setWprEnabled, meta: '1 个工具' },
     { key: 'hotboard', name: '热榜查询', intro: '从已选择的平台列表中查询热门话题。', enabled: hbEnabled, onValueChange: setHbEnabled, meta: hbPlatformTypes.length + ' 个平台' },
+    { key: 'qqBot', name: 'QQ 机器人', intro: '把 QQ 官方机器人消息接入独立后端，由 YSClaude 生成回复。', enabled: qqEnabled, onValueChange: setQqEnabled, meta: qqBackendStatus === '尚未检测' ? '官方 Bot' : qqBackendStatus },
     { key: 'webInteraction', name: '网页交互', intro: '允许 AI 打开、观察并操作应用内网页面板。', enabled: wiEnabled, onValueChange: setWiEnabled, meta: '最多 ' + (wiMaxCalls || '8') + ' 次' },
     { key: 'shizukuFile', name: 'Shizuku 文件', intro: '读写你明确授权的 Shizuku 路径内文件。', enabled: shizukuEnabled, onValueChange: setShizukuEnabled, meta: shizukuRoots.length + ' 个路径' },
     { key: 'deviceInfo', name: '设备信息', intro: '读取设备品牌、型号、系统版本和运行状态。', enabled: deviceInfoEnabled, onValueChange: setDeviceInfoEnabled, meta: '设备原生' },
@@ -3790,6 +4438,8 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       case 'webInteraction':
         handleSaveWebInteraction();
         break;
+      case 'qqBot':
+        return handleSaveQqBot();
       case 'shizukuFile':
         handleSaveShizukuFile();
         break;
@@ -3797,6 +4447,7 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         handleSaveNativeTools();
         break;
     }
+    return true;
   }
 
   function handleDisableBuiltInTool(toolKey: string) {
@@ -3826,6 +4477,10 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
             case 'webInteraction':
               setWiEnabled(false);
               setWebInteractionConfig({ enabled: false });
+              break;
+            case 'qqBot':
+              setQqEnabled(false);
+              setQqBotConfig({ enabled: false });
               break;
             case 'shizukuFile':
               setShizukuEnabled(false);
@@ -3890,6 +4545,189 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         return (<><Text style={styles.toolModalDescription}>AI 可以读取链接中的网页正文。</Text><View style={styles.switchRow}><Text style={styles.label}>启用网页读取</Text><Switch value={wprEnabled} onValueChange={setWprEnabled} trackColor={{ true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>渲染读取服务地址</Text><TextInput style={styles.input} value={wprRenderServiceUrl} onChangeText={setWprRenderServiceUrl} placeholder="http://localhost:8787/read" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View></>);
       case 'hotboard':
         return (<><Text style={styles.toolModalDescription}>AI 可以从已选择的平台类型中查询热榜。</Text><View style={styles.switchRow}><Text style={styles.label}>启用热榜查询</Text><Switch value={hbEnabled} onValueChange={setHbEnabled} trackColor={{ true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>UAPI 密钥</Text><TextInput style={styles.input} value={hbApiKey} onChangeText={setHbApiKey} placeholder="Bearer 令牌" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View><View style={styles.platformActions}><Pressable style={styles.platformActionButton} onPress={selectDefaultHotboardPlatforms}><Text style={styles.platformActionText}>默认</Text></Pressable><Pressable style={styles.platformActionButton} onPress={selectAllHotboardPlatforms}><Text style={styles.platformActionText}>全选</Text></Pressable><Pressable style={styles.platformActionButton} onPress={clearHotboardPlatforms}><Text style={styles.platformActionText}>清空</Text></Pressable></View><View style={styles.platformGrid}>{HOTBOARD_PLATFORMS.map((platform) => { const selected = hbPlatformTypes.includes(platform.type); return (<Pressable key={platform.type} style={[styles.platformChip, selected && styles.platformChipSelected]} onPress={() => toggleHotboardPlatform(platform.type)}><Text style={[styles.platformChipLabel, selected && styles.platformChipLabelSelected]}>{platform.label}</Text><Text style={[styles.platformChipType, selected && styles.platformChipTypeSelected]}>{platform.type}</Text></Pressable>); })}</View></>);
+      case 'qqBot':
+        const visibleConversations = getVisibleBotPanelConversations();
+        return (
+          <>
+            <Text style={styles.toolModalDescription}>手机端保存控制配置，QQ 和微信长连接都由桌面或云端后端服务负责。</Text>
+            <View style={styles.field}>
+              <Text style={styles.label}>后端服务地址</Text>
+              <TextInput style={styles.input} value={qqBackendUrl} onChangeText={setQqBackendUrl} placeholder="http://127.0.0.1:8788" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>控制台令牌</Text>
+              <TextInput style={styles.input} value={qqControlToken} onChangeText={setQqControlToken} placeholder="后台 ADMIN_TOKEN" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>OpenAI 兼容 Base URL</Text>
+              <TextInput style={styles.input} value={qqOpenAiBaseUrl} onChangeText={setQqOpenAiBaseUrl} placeholder="https://api.openai.com/v1" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>OpenAI 兼容 API Key</Text>
+              <TextInput style={styles.input} value={qqOpenAiApiKey} onChangeText={setQqOpenAiApiKey} placeholder="sk-..." placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" />
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>模型</Text>
+              <TextInput style={styles.input} value={qqModel} onChangeText={setQqModel} placeholder="gpt-4.1-mini" placeholderTextColor={colors.textTertiary} autoCapitalize="none" />
+            </View>
+            <View style={styles.toolNumberRow}>
+              <View style={styles.toolNumberField}><Text style={styles.label}>Temperature</Text><TextInput style={styles.input} value={qqTemperature} onChangeText={setQqTemperature} keyboardType="decimal-pad" placeholder="0.7" placeholderTextColor={colors.textTertiary} /></View>
+              <View style={styles.toolNumberField}><Text style={styles.label}>最大输出</Text><TextInput style={styles.input} value={qqMaxOutputTokens} onChangeText={setQqMaxOutputTokens} keyboardType="number-pad" placeholder="1200" placeholderTextColor={colors.textTertiary} /></View>
+            </View>
+            <View style={styles.field}><Text style={styles.label}>历史消息条数</Text><TextInput style={styles.input} value={qqHistoryLimit} onChangeText={setQqHistoryLimit} keyboardType="number-pad" placeholder="16" placeholderTextColor={colors.textTertiary} /></View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <Text style={styles.label}>合并连续消息</Text>
+                <Text style={styles.hint}>同一会话内连续发来的消息会先等待并合并，窗口结束后只回复一次。</Text>
+              </View>
+              <Switch value={qqMessageBatchEnabled} onValueChange={setQqMessageBatchEnabled} trackColor={{ true: colors.primary }} />
+            </View>
+            <View style={styles.field}><Text style={styles.label}>合并等待秒数</Text><TextInput style={styles.input} value={qqMessageBatchWindowSeconds} onChangeText={setQqMessageBatchWindowSeconds} keyboardType="decimal-pad" placeholder="6" placeholderTextColor={colors.textTertiary} /></View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <Text style={styles.label}>启用表情包</Text>
+                <Text style={styles.hint}>同步 AI 表情包到后端，模型可用 &lt;sticker&gt;名称&lt;/sticker&gt; 发送图片表情。当前 {getQqStickerCount()} 个。</Text>
+              </View>
+              <Switch value={qqStickersEnabled} onValueChange={setQqStickersEnabled} trackColor={{ true: colors.primary }} />
+            </View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <Text style={styles.label}>启用记忆库工具</Text>
+                <Text style={styles.hint}>由后端直接调用云端记忆库，逻辑与主聊天一致。</Text>
+              </View>
+              <Switch value={qqMemoryVaultEnabled} onValueChange={setQqMemoryVaultEnabled} trackColor={{ true: colors.primary }} />
+            </View>
+            <View style={styles.field}><Text style={styles.label}>记忆库地址</Text><TextInput style={styles.input} value={qqMemoryVaultBaseUrl} onChangeText={setQqMemoryVaultBaseUrl} placeholder="https://your-memory-vault.com" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
+            <View style={styles.toolNumberRow}>
+              <View style={styles.toolNumberField}><Text style={styles.label}>返回条数</Text><TextInput style={styles.input} value={qqMemoryVaultTopK} onChangeText={setQqMemoryVaultTopK} keyboardType="number-pad" placeholder="5" placeholderTextColor={colors.textTertiary} /></View>
+              <View style={styles.toolNumberField}><Text style={styles.label}>令牌预算</Text><TextInput style={styles.input} value={qqMemoryVaultTokenBudget} onChangeText={setQqMemoryVaultTokenBudget} keyboardType="number-pad" placeholder="2000" placeholderTextColor={colors.textTertiary} /></View>
+            </View>
+            <View style={styles.field}><Text style={styles.label}>每轮最大记忆库调用次数</Text><TextInput style={styles.input} value={qqMemoryVaultMaxToolCalls} onChangeText={setQqMemoryVaultMaxToolCalls} keyboardType="number-pad" placeholder="3" placeholderTextColor={colors.textTertiary} /></View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <Text style={styles.label}>启用联网搜索</Text>
+                <Text style={styles.hint}>由后端通过 Tavily 搜索实时信息。</Text>
+              </View>
+              <Switch value={qqWebSearchEnabled} onValueChange={setQqWebSearchEnabled} trackColor={{ true: colors.primary }} />
+            </View>
+            <View style={styles.field}><Text style={styles.label}>Tavily 密钥</Text><TextInput style={styles.input} value={qqTavilyApiKey} onChangeText={setQqTavilyApiKey} placeholder="tvly-..." placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View>
+            <View style={styles.field}><Text style={styles.label}>搜索结果数量</Text><TextInput style={styles.input} value={qqWebSearchMaxResults} onChangeText={setQqWebSearchMaxResults} keyboardType="number-pad" placeholder="5" placeholderTextColor={colors.textTertiary} /></View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <Text style={styles.label}>启用自定义 MCP 工具</Text>
+                <Text style={styles.hint}>{getQqMcpEnabledServerCount()} 个服务 · {getQqMcpEnabledToolCount()} 个工具。仅支持 Zeabur 后端可访问的 HTTP MCP。</Text>
+              </View>
+              <Switch value={qqMcpEnabled} onValueChange={setQqMcpEnabled} trackColor={{ true: colors.primary }} />
+            </View>
+            <View style={styles.field}><Text style={styles.label}>每轮最大 MCP 调用次数</Text><TextInput style={styles.input} value={qqMcpMaxToolCalls} onChangeText={setQqMcpMaxToolCalls} keyboardType="number-pad" placeholder="6" placeholderTextColor={colors.textTertiary} /></View>
+            <View style={styles.platformActions}>
+              <Pressable style={styles.platformActionButton} onPress={handleImportMainChatMcpConfig}>
+                <Text style={styles.platformActionText}>导入主聊天 MCP 工具</Text>
+              </Pressable>
+            </View>
+            <View style={styles.platformActions}>
+              <Pressable style={[styles.platformActionButton, botPanelTab === 'qq' && styles.platformChipSelected]} onPress={() => setBotPanelTab('qq')}>
+                <Text style={styles.platformActionText}>QQ</Text>
+              </Pressable>
+              <Pressable style={[styles.platformActionButton, botPanelTab === 'wechat' && styles.platformChipSelected]} onPress={() => setBotPanelTab('wechat')}>
+                <Text style={styles.platformActionText}>微信</Text>
+              </Pressable>
+            </View>
+            <View style={styles.field}>
+              <Text style={styles.label}>{getBotPanelPlatformLabel()} 会话管理</Text>
+              <Text style={styles.hint}>{qqContextStatus}</Text>
+              <View style={styles.platformActions}>
+                <Pressable style={[styles.platformActionButton, qqContextRefreshing && styles.importButtonDisabled]} onPress={handleRefreshQqBotContexts} disabled={qqContextRefreshing}>
+                  <Text style={styles.platformActionText}>{qqContextRefreshing ? '刷新中' : '刷新上下文'}</Text>
+                </Pressable>
+                <Pressable style={[styles.platformActionButton, qqContextClearing && styles.importButtonDisabled]} onPress={handleClearQqBotContexts} disabled={qqContextClearing}>
+                  <Text style={styles.platformActionText}>{qqContextClearing ? '清空中' : '清空全部上下文'}</Text>
+                </Pressable>
+              </View>
+              {visibleConversations.length > 0 && (
+                <View style={styles.toolListPreview}>
+                  {visibleConversations.map((conversation) => (
+                    <Pressable
+                      key={conversation.key}
+                      style={styles.toolListPreviewItem}
+                      onPress={() => handleOpenQqConversation(conversation.key)}
+                    >
+                      <View style={styles.toolListPreviewText}>
+                        <Text style={styles.toolListPreviewName} numberOfLines={1}>{conversation.key}</Text>
+                        <Text style={styles.toolListPreviewDescription} numberOfLines={2}>{conversation.preview || '暂无预览'}</Text>
+                        <Text style={styles.toolListPreviewStatus}>{conversation.messageCount} 条消息 · {conversation.lastRole || 'unknown'} · 点按查看</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+            {botPanelTab === 'qq' ? (
+              <>
+                <View style={styles.field}>
+                  <Text style={styles.label}>QQ System Prompt</Text>
+                  <TextInput style={[styles.input, styles.multilineInput]} value={qqSystemPrompt} onChangeText={setQqSystemPrompt} multiline textAlignVertical="top" placeholder="QQ 机器人提示词" placeholderTextColor={colors.textTertiary} />
+                </View>
+                <View style={styles.platformActions}>
+                  <Pressable style={styles.platformActionButton} onPress={handleImportMainChatConfig}>
+                    <Text style={styles.platformActionText}>导入主聊天配置</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchText}>
+                    <Text style={styles.label}>启用语音 TTS</Text>
+                    <Text style={styles.hint}>使用 TTS 配置中的 MiniMax 参数；仅 {'<voice>'} 标签内的内容会作为 QQ 语音消息发送。</Text>
+                  </View>
+                  <Switch value={qqTtsEnabled} onValueChange={setQqTtsEnabled} trackColor={{ true: colors.primary }} />
+                </View>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchText}>
+                    <Text style={styles.label}>启用 QQ 机器人</Text>
+                    <Text style={styles.hint}>{qqBackendStatus}</Text>
+                  </View>
+                  <Switch value={qqEnabled} onValueChange={setQqEnabled} trackColor={{ true: colors.primary }} />
+                </View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>沙箱环境</Text><Text style={styles.hint}>用于 QQ 官方机器人测试环境。</Text></View><Switch value={qqSandbox} onValueChange={setQqSandbox} trackColor={{ true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>后端启动时自动连接</Text><Text style={styles.hint}>保存到后端后，服务重启会按此开关连接 QQ 网关。</Text></View><Switch value={qqAutoConnect} onValueChange={setQqAutoConnect} trackColor={{ true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>允许私聊</Text><Text style={styles.hint}>接收 QQ 用户与机器人的单独对话。</Text></View><Switch value={qqAllowDirectMessages} onValueChange={setQqAllowDirectMessages} trackColor={{ true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>允许频道/群提及</Text><Text style={styles.hint}>仅处理平台推送的机器人提及消息。</Text></View><Switch value={qqAllowGuildMentions} onValueChange={setQqAllowGuildMentions} trackColor={{ true: colors.primary }} /></View>
+              </>
+            ) : (
+              <>
+                <View style={styles.field}>
+                  <Text style={styles.label}>微信 System Prompt</Text>
+                  <TextInput style={[styles.input, styles.multilineInput]} value={wechatSystemPrompt} onChangeText={setWechatSystemPrompt} multiline textAlignVertical="top" placeholder="微信 ClawBot 提示词" placeholderTextColor={colors.textTertiary} />
+                </View>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchText}>
+                    <Text style={styles.label}>启用微信 ClawBot 通道</Text>
+                    <Text style={styles.hint}>微信只作为扫码消息通道，回复仍由 YSClaude AgentCore 生成。</Text>
+                  </View>
+                  <Switch value={wechatEnabled} onValueChange={setWechatEnabled} trackColor={{ true: colors.primary }} />
+                </View>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchText}>
+                    <Text style={styles.label}>微信后端自动连接</Text>
+                    <Text style={styles.hint}>服务重启后自动恢复微信长轮询；需要 Zeabur 持久化卷保留扫码状态。</Text>
+                  </View>
+                  <Switch value={wechatAutoConnect} onValueChange={setWechatAutoConnect} trackColor={{ true: colors.primary }} />
+                </View>
+                <View style={styles.field}><Text style={styles.label}>微信账号 ID</Text><TextInput style={styles.input} value={wechatAccountId} onChangeText={setWechatAccountId} placeholder="扫码后自动写入，可留空自动选择" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
+                <View style={styles.field}><Text style={styles.label}>微信 API Base URL</Text><TextInput style={styles.input} value={wechatBaseUrl} onChangeText={setWechatBaseUrl} placeholder="默认留空" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
+                <View style={styles.platformActions}>
+                  <Pressable style={[styles.platformActionButton, wechatBusy && styles.importButtonDisabled]} onPress={() => callWechatControl('login')} disabled={wechatBusy}><Text style={styles.platformActionText}>微信登录</Text></Pressable>
+                  <Pressable style={[styles.platformActionButton, wechatBusy && styles.importButtonDisabled]} onPress={() => callWechatControl('start')} disabled={wechatBusy}><Text style={styles.platformActionText}>启动微信</Text></Pressable>
+                  <Pressable style={[styles.platformActionButton, wechatBusy && styles.importButtonDisabled]} onPress={() => callWechatControl('stop')} disabled={wechatBusy}><Text style={styles.platformActionText}>停止微信</Text></Pressable>
+                  <Pressable style={[styles.platformActionButton, wechatBusy && styles.importButtonDisabled]} onPress={() => callWechatControl('logout')} disabled={wechatBusy}><Text style={styles.platformActionText}>退出微信</Text></Pressable>
+                </View>
+              </>
+            )}
+            <View style={styles.platformActions}>
+              <Pressable style={[styles.platformActionButton, qqBackendTesting && styles.importButtonDisabled]} onPress={handleTestQqBotBackend} disabled={qqBackendTesting}><Text style={styles.platformActionText}>{qqBackendTesting ? '检测中' : '测试后端'}</Text></Pressable>
+              <Pressable style={[styles.platformActionButton, qqBackendSyncing && styles.importButtonDisabled]} onPress={handleSyncQqBotBackend} disabled={qqBackendSyncing}><Text style={styles.platformActionText}>{qqBackendSyncing ? '同步中' : '同步到后端'}</Text></Pressable>
+            </View>
+          </>
+        );
       case 'webInteraction':
         return (<><Text style={styles.toolModalDescription}>AI 可以在网页面板中打开、观察、点击和等待。</Text><View style={styles.switchRow}><Text style={styles.label}>启用网页交互</Text><Switch value={wiEnabled} onValueChange={setWiEnabled} trackColor={{ true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>每轮最大操作次数</Text><TextInput style={styles.input} value={wiMaxCalls} onChangeText={setWiMaxCalls} keyboardType="number-pad" placeholder="8" placeholderTextColor={colors.textTertiary} /></View></>);
       case 'shizukuFile':
@@ -4111,7 +4949,8 @@ function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         <Pressable style={styles.toolGroupHeader} onPress={() => setToolSettingsUiConfig({ customMcpExpanded: !customMcpExpanded })}><View style={styles.switchText}><Text style={styles.toolGroupTitle}>自定义 MCP</Text><Text style={styles.hint}>每个远程 MCP 服务都单独用卡片展示，点开后可以同步、编辑或删除。</Text></View><Text style={styles.platformToggleIcon}>{customMcpExpanded ? '↑' : '↓'}</Text></Pressable>
         {customMcpExpanded && <><View style={styles.field}><Text style={styles.label}>每轮最大调用次数</Text><TextInput style={styles.input} value={mcpMaxCalls} onChangeText={setMcpMaxCalls} keyboardType="number-pad" placeholder="6" placeholderTextColor={colors.textTertiary} /></View><View style={styles.toolAddPanel}><Text style={styles.sectionTitle}>添加 MCP 服务</Text><TextInput style={styles.input} value={mcpServerName} onChangeText={setMcpServerName} placeholder="服务名称" placeholderTextColor={colors.textTertiary} /><TextInput style={styles.input} value={mcpServerUrl} onChangeText={setMcpServerUrl} placeholder="https://example.com/mcp" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /><TextInput style={styles.input} value={mcpServerAuth} onChangeText={setMcpServerAuth} placeholder="授权信息，可选" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /><Pressable style={styles.addPathButton} onPress={handleAddMcpServer}><Text style={styles.addPathButtonText}>添加服务</Text></Pressable></View>{mcpServers.length === 0 ? <Text style={styles.emptyText}>尚未添加 MCP 服务</Text> : <View style={styles.toolCardGrid}>{mcpServers.map((server) => (<Pressable key={server.id} style={[styles.toolCard, server.enabled && styles.toolCardEnabled]} onPress={() => setSelectedMcpServerId(server.id)}><View style={styles.toolCardTop}><View style={styles.toolCardText}><Text style={styles.toolCardName} numberOfLines={1}>{server.name}</Text><Text style={styles.toolCardMeta}>工具 {getEnabledMcpToolCount(server)}/{server.tools.length} · 资源 {getEnabledMcpResourceCount(server)}/{(server.resources || []).length} · 提示词 {(server.prompts || []).length}</Text></View><Switch value={server.enabled} onValueChange={(value) => handleUpdateMcpServer(server.id, { enabled: value })} trackColor={{ false: colors.border, true: colors.primary }} thumbColor="#FFFFFF" /></View><Text style={styles.toolCardIntro} numberOfLines={2}>{server.url}</Text><Text style={[styles.toolCardStatus, server.enabled && styles.toolCardStatusEnabled]}>{server.enabled ? '已开启' : '已关闭'}</Text></Pressable>))}</View>}<View style={styles.actions}><Pressable style={styles.saveButton} onPress={handleSaveMcpTools}><Text style={styles.saveButtonText}>保存 MCP 能力</Text></Pressable></View></>}
       </ScrollView>
-      <Modal visible={!!selectedBuiltInTool} transparent animationType="fade" onRequestClose={() => setSelectedBuiltInToolKey(null)}><View style={styles.overlay}><View style={[styles.modal, styles.toolModal]}><View style={styles.toolModalHeader}><View style={styles.switchText}><Text style={styles.modalTitle}>{selectedBuiltInTool?.name || '工具'}</Text>{!!selectedBuiltInTool && <Text style={styles.hint}>{selectedBuiltInTool.meta}</Text>}</View><Pressable style={styles.modalCancel} onPress={() => setSelectedBuiltInToolKey(null)}><Text style={styles.modalCancelText}>关闭</Text></Pressable></View><ScrollView style={styles.toolModalBody} keyboardShouldPersistTaps="handled">{!!selectedBuiltInTool && renderBuiltInToolEditor(selectedBuiltInTool.key)}</ScrollView>{!!selectedBuiltInTool && <View style={styles.toolModalActions}><Pressable style={styles.removeSmallButton} onPress={() => handleDisableBuiltInTool(selectedBuiltInTool.key)}><Text style={styles.removeSmallButtonText}>删除/关闭</Text></Pressable><Pressable style={styles.modalConfirm} onPress={() => { handleSaveBuiltInTool(selectedBuiltInTool.key); setSelectedBuiltInToolKey(null); }}><Text style={styles.modalConfirmText}>保存</Text></Pressable></View>}</View></View></Modal>
+      <Modal visible={!!selectedBuiltInTool} transparent animationType="fade" onRequestClose={() => setSelectedBuiltInToolKey(null)}><View style={styles.overlay}><View style={[styles.modal, styles.toolModal]}><View style={styles.toolModalHeader}><View style={styles.switchText}><Text style={styles.modalTitle}>{selectedBuiltInTool?.name || '工具'}</Text>{!!selectedBuiltInTool && <Text style={styles.hint}>{selectedBuiltInTool.meta}</Text>}</View><Pressable style={styles.modalCancel} onPress={() => setSelectedBuiltInToolKey(null)}><Text style={styles.modalCancelText}>关闭</Text></Pressable></View><ScrollView style={styles.toolModalBody} keyboardShouldPersistTaps="handled">{!!selectedBuiltInTool && renderBuiltInToolEditor(selectedBuiltInTool.key)}</ScrollView>{!!selectedBuiltInTool && <View style={styles.toolModalActions}><Pressable style={styles.removeSmallButton} onPress={() => handleDisableBuiltInTool(selectedBuiltInTool.key)}><Text style={styles.removeSmallButtonText}>删除/关闭</Text></Pressable><Pressable style={styles.modalConfirm} onPress={() => { const saved = handleSaveBuiltInTool(selectedBuiltInTool.key); if (saved !== false) setSelectedBuiltInToolKey(null); }}><Text style={styles.modalConfirmText}>保存</Text></Pressable></View>}</View></View></Modal>
+      <Modal visible={!!qqSelectedConversationKey} transparent animationType="fade" onRequestClose={() => setQqSelectedConversationKey(null)}><View style={styles.overlay}><View style={[styles.modal, styles.toolModal]}><View style={styles.toolModalHeader}><View style={styles.switchText}><Text style={styles.modalTitle}>{getConversationPlatformLabel(qqSelectedConversationKey)} 上下文</Text><Text style={styles.hint}>{qqSelectedConversationMessageCount} 条消息 · 第 {qqSelectedConversationPage}/{qqSelectedConversationTotalPages} 页</Text></View><Pressable style={styles.modalCancel} onPress={() => setQqSelectedConversationKey(null)}><Text style={styles.modalCancelText}>关闭</Text></Pressable></View><ScrollView style={styles.toolModalBody} keyboardShouldPersistTaps="handled"><Text style={styles.label}>会话</Text><Text selectable style={styles.toolDetailText}>{qqSelectedConversationKey || ''}</Text><View style={styles.platformActions}><Pressable style={[styles.platformActionButton, (qqConversationLoading || qqSelectedConversationPage <= 1) && styles.importButtonDisabled]} onPress={() => qqSelectedConversationKey && handleOpenQqConversation(qqSelectedConversationKey, qqSelectedConversationPage - 1)} disabled={qqConversationLoading || qqSelectedConversationPage <= 1}><Text style={styles.platformActionText}>上一页</Text></Pressable><Pressable style={[styles.platformActionButton, (qqConversationLoading || qqSelectedConversationPage >= qqSelectedConversationTotalPages) && styles.importButtonDisabled]} onPress={() => qqSelectedConversationKey && handleOpenQqConversation(qqSelectedConversationKey, qqSelectedConversationPage + 1)} disabled={qqConversationLoading || qqSelectedConversationPage >= qqSelectedConversationTotalPages}><Text style={styles.platformActionText}>下一页</Text></Pressable></View><View style={styles.platformActions}><Pressable style={[styles.platformActionButton, (qqMessageDeleting || qqSelectedMessageIndexes.length === 0) && styles.importButtonDisabled]} onPress={handleDeleteSelectedQqMessages} disabled={qqMessageDeleting || qqSelectedMessageIndexes.length === 0}><Text style={styles.platformActionText}>{qqMessageDeleting ? '删除中' : `删除选中 ${qqSelectedMessageIndexes.length} 条`}</Text></Pressable><Pressable style={[styles.platformActionButton, qqMessageDeleting && styles.importButtonDisabled]} onPress={handleClearSelectedQqConversation} disabled={qqMessageDeleting}><Text style={styles.platformActionText}>清除此会话</Text></Pressable></View>{qqConversationLoading ? (<ActivityIndicator size="small" color={colors.primary} />) : qqSelectedConversationMessages.length === 0 ? (<Text style={styles.emptyText}>该页没有可管理的消息</Text>) : (<View style={styles.toolListPreview}>{qqSelectedConversationMessages.map((message) => { const selected = qqSelectedMessageIndexes.includes(message.index); return (<Pressable key={`${qqSelectedConversationKey}-${message.index}`} style={[styles.toolListPreviewItem, selected && styles.toolCardEnabled]} onPress={() => toggleQqMessageIndex(message.index)}><View style={styles.toolListPreviewText}><Text style={styles.toolListPreviewName}>#{message.index} · {message.role || 'unknown'}</Text><Text selectable style={styles.toolListPreviewDescription}>{message.content || message.preview || '空消息'}</Text><Text style={styles.toolListPreviewStatus}>{selected ? '已选中' : '点按选择'}</Text></View></Pressable>); })}</View>)}</ScrollView></View></View></Modal>
       <Modal visible={!!selectedMcpServer} transparent animationType="fade" onRequestClose={() => setSelectedMcpServerId(null)}><View style={styles.overlay}><View style={[styles.modal, styles.toolModal]}><View style={styles.toolModalHeader}><View style={styles.switchText}><Text style={styles.modalTitle}>{selectedMcpServer?.name || 'MCP 服务'}</Text>{!!selectedMcpServer && <Text style={styles.hint}>{selectedMcpServer.url}</Text>}</View><Pressable style={styles.modalCancel} onPress={() => setSelectedMcpServerId(null)}><Text style={styles.modalCancelText}>关闭</Text></Pressable></View><ScrollView style={styles.toolModalBody} keyboardShouldPersistTaps="handled">{renderMcpServerEditor()}</ScrollView>{!!selectedMcpServer && <View style={styles.toolModalActions}><Pressable style={styles.removeSmallButton} onPress={() => handleRemoveMcpServerFromModal(selectedMcpServer.id)}><Text style={styles.removeSmallButtonText}>删除</Text></Pressable><Pressable style={styles.modalConfirm} onPress={() => { handleSaveMcpTools(); setSelectedMcpServerId(null); }}><Text style={styles.modalConfirmText}>保存</Text></Pressable></View>}</View></View></Modal>
       <Modal visible={!!selectedMcpTool} transparent animationType="fade" onRequestClose={() => setSelectedMcpToolRef(null)}><View style={styles.overlay}><View style={[styles.modal, styles.toolModal]}><View style={styles.toolModalHeader}><View style={styles.switchText}><Text style={styles.modalTitle}>{selectedMcpTool?.title || selectedMcpTool?.name || 'MCP 工具'}</Text>{!!selectedMcpToolServer && <Text style={styles.hint}>{selectedMcpToolServer.name}</Text>}</View><Pressable style={styles.modalCancel} onPress={() => setSelectedMcpToolRef(null)}><Text style={styles.modalCancelText}>关闭</Text></Pressable></View>{!!selectedMcpTool && <ScrollView style={styles.toolModalBody} keyboardShouldPersistTaps="handled"><Text style={styles.label}>工具名称</Text><Text style={styles.toolDetailText}>{selectedMcpTool.name}</Text><Text style={styles.label}>启用状态</Text><Text style={styles.toolDetailText}>{selectedMcpTool.enabled !== false ? '已开启' : '已关闭'}</Text><Text style={styles.label}>简介</Text><Text style={styles.toolDetailText}>{selectedMcpTool.description || '暂无简介'}</Text><Text style={styles.label}>参数定义</Text><Text selectable style={styles.toolSchemaText}>{formatMcpToolInputSchema(selectedMcpTool)}</Text></ScrollView>}</View></View></Modal>
       <Modal visible={!!selectedMcpResource} transparent animationType="fade" onRequestClose={() => setSelectedMcpResourceRef(null)}><View style={styles.overlay}><View style={[styles.modal, styles.toolModal]}><View style={styles.toolModalHeader}><View style={styles.switchText}><Text style={styles.modalTitle}>{selectedMcpResource?.title || selectedMcpResource?.name || 'MCP 资源'}</Text>{!!selectedMcpResourceServer && <Text style={styles.hint}>{selectedMcpResourceServer.name}</Text>}</View><Pressable style={styles.modalCancel} onPress={() => setSelectedMcpResourceRef(null)}><Text style={styles.modalCancelText}>关闭</Text></Pressable></View>{!!selectedMcpResource && <ScrollView style={styles.toolModalBody} keyboardShouldPersistTaps="handled"><Text style={styles.label}>URI</Text><Text selectable style={styles.toolDetailText}>{selectedMcpResource.uri}</Text><Text style={styles.label}>MIME 类型</Text><Text style={styles.toolDetailText}>{selectedMcpResource.mimeType || '未知'}</Text><Text style={styles.label}>状态</Text><Text style={styles.toolDetailText}>{selectedMcpResource.enabled !== false ? '允许读取' : '已关闭'} · {selectedMcpResource.pinned ? '固定附加到上下文' : '不自动附加'}</Text><Text style={styles.label}>简介</Text><Text style={styles.toolDetailText}>{selectedMcpResource.description || '暂无简介'}</Text></ScrollView>}</View></View></Modal>
