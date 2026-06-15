@@ -78,6 +78,43 @@ export interface PeriodRecord {
   updatedAt: number;
 }
 
+export type DailyPaperStatus = 'draft' | 'generating' | 'ready' | 'failed';
+
+export interface DailyPaperSource {
+  title: string;
+  url: string;
+  sourceName: string;
+  publishedAt?: string;
+  category: string;
+}
+
+export interface DailyPaperSection {
+  title: string;
+  items: string[];
+}
+
+export interface DailyPaperContent {
+  masthead: string;
+  headline: string;
+  dek: string;
+  sections: DailyPaperSection[];
+  editorial: string;
+  generatedFrom: string;
+}
+
+export interface DailyPaper {
+  id: string;
+  dateKey: string;
+  title: string;
+  status: DailyPaperStatus;
+  content: DailyPaperContent | null;
+  sources: DailyPaperSource[];
+  generatedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  errorMessage?: string;
+}
+
 export interface APIConfig {
   baseUrl: string;
   apiKey: string;

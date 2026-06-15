@@ -98,6 +98,22 @@ async function initTables(database: SQLite.SQLiteDatabase) {
 
     CREATE INDEX IF NOT EXISTS idx_period_records_start ON period_records(start_date DESC);
 
+    CREATE TABLE IF NOT EXISTS daily_papers (
+      id TEXT PRIMARY KEY,
+      date_key TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      content_json TEXT,
+      sources_json TEXT NOT NULL DEFAULT '[]',
+      generated_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      error_message TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_daily_papers_date ON daily_papers(date_key DESC);
+    CREATE INDEX IF NOT EXISTS idx_daily_papers_status ON daily_papers(status);
+
     CREATE TABLE IF NOT EXISTS reading_books (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL DEFAULT '',
@@ -489,6 +505,28 @@ async function runMigrations(database: SQLite.SQLiteDatabase) {
       CREATE INDEX IF NOT EXISTS idx_api_usage_model ON api_usage_events(model, started_at DESC);
 
       PRAGMA user_version = 15;
+    `);
+  }
+
+  if (version < 16) {
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS daily_papers (
+        id TEXT PRIMARY KEY,
+        date_key TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'draft',
+        content_json TEXT,
+        sources_json TEXT NOT NULL DEFAULT '[]',
+        generated_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        error_message TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_daily_papers_date ON daily_papers(date_key DESC);
+      CREATE INDEX IF NOT EXISTS idx_daily_papers_status ON daily_papers(status);
+
+      PRAGMA user_version = 16;
     `);
   }
 }

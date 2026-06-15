@@ -4,6 +4,10 @@ import {
   Message,
   Diary,
   PeriodRecord,
+  DailyPaper,
+  DailyPaperContent,
+  DailyPaperSource,
+  DailyPaperStatus,
   HiddenRange,
   ToolInvocation,
   ReadingBook,
@@ -1264,6 +1268,167 @@ export async function getAllPeriodRecords(): Promise<PeriodRecord[]> {
     updated_at: number;
   }>('SELECT * FROM period_records ORDER BY start_date DESC');
   return rows.map(mapPeriodRecordRow);
+}
+
+/* ==================== Daily Paper CRUD ==================== */
+
+interface DailyPaperRow {
+  id: string;
+  date_key: string;
+  title: string;
+  status: string;
+  content_json: string | null;
+  sources_json: string | null;
+  generated_at: number | null;
+  created_at: number;
+  updated_at: number;
+  error_message: string | null;
+}
+
+function parseDailyPaperStatus(value: string): DailyPaperStatus {
+  if (value === 'generating' || value === 'ready' || value === 'failed') return value;
+  return 'draft';
+}
+
+function parseDailyPaperContent(raw: string | null | undefined): DailyPaperContent | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      masthead: typeof parsed.masthead === 'string' ? parsed.masthead : 'YS Daily',
+      headline: typeof parsed.headline === 'string' ? parsed.headline : '',
+      dek: typeof parsed.dek === 'string' ? parsed.dek : '',
+      sections: Array.isArray(parsed.sections)
+        ? parsed.sections
+            .map((section: any) => ({
+              title: typeof section?.title === 'string' ? section.title : '',
+              items: Array.isArray(section?.items)
+                ? section.items.filter((item: unknown) => typeof item === 'string')
+                : [],
+            }))
+            .filter((section: DailyPaperContent['sections'][number]) => section.title || section.items.length > 0)
+        : [],
+      editorial: typeof parsed.editorial === 'string' ? parsed.editorial : '',
+      generatedFrom: typeof parsed.generatedFrom === 'string' ? parsed.generatedFrom : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseDailyPaperSources(raw: string | null | undefined): DailyPaperSource[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((source) => ({
+        title: typeof source?.title === 'string' ? source.title : '',
+        url: typeof source?.url === 'string' ? source.url : '',
+        sourceName: typeof source?.sourceName === 'string' ? source.sourceName : '',
+        publishedAt: typeof source?.publishedAt === 'string' ? source.publishedAt : undefined,
+        category: typeof source?.category === 'string' ? source.category : 'general',
+      }))
+      .filter((source) => source.title && source.url);
+  } catch {
+    return [];
+  }
+}
+
+function mapDailyPaperRow(row: DailyPaperRow): DailyPaper {
+  return {
+    id: row.id,
+    dateKey: row.date_key,
+    title: row.title,
+    status: parseDailyPaperStatus(row.status),
+    content: parseDailyPaperContent(row.content_json),
+    sources: parseDailyPaperSources(row.sources_json),
+    generatedAt: row.generated_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    errorMessage: row.error_message || undefined,
+  };
+}
+
+export async function upsertDailyPaper(paper: DailyPaper): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO daily_papers
+      (id, date_key, title, status, content_json, sources_json, generated_at, created_at, updated_at, error_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      paper.id,
+      paper.dateKey,
+      paper.title,
+      paper.status,
+      paper.content ? JSON.stringify(paper.content) : null,
+      JSON.stringify(paper.sources || []),
+      paper.generatedAt,
+      paper.createdAt,
+      paper.updatedAt,
+      paper.errorMessage || null,
+    ]
+  );
+}
+
+export async function updateDailyPaper(
+  dateKey: string,
+  updates: Partial<Pick<DailyPaper, 'title' | 'status' | 'content' | 'sources' | 'generatedAt' | 'updatedAt' | 'errorMessage'>>
+): Promise<void> {
+  const db = await getDatabase();
+  const sets: string[] = [];
+  const values: any[] = [];
+
+  if (updates.title !== undefined) {
+    sets.push('title = ?');
+    values.push(updates.title);
+  }
+  if (updates.status !== undefined) {
+    sets.push('status = ?');
+    values.push(updates.status);
+  }
+  if (updates.content !== undefined) {
+    sets.push('content_json = ?');
+    values.push(updates.content ? JSON.stringify(updates.content) : null);
+  }
+  if (updates.sources !== undefined) {
+    sets.push('sources_json = ?');
+    values.push(JSON.stringify(updates.sources));
+  }
+  if (updates.generatedAt !== undefined) {
+    sets.push('generated_at = ?');
+    values.push(updates.generatedAt);
+  }
+  if (updates.updatedAt !== undefined) {
+    sets.push('updated_at = ?');
+    values.push(updates.updatedAt);
+  }
+  if (updates.errorMessage !== undefined) {
+    sets.push('error_message = ?');
+    values.push(updates.errorMessage || null);
+  }
+
+  if (sets.length === 0) return;
+  values.push(dateKey);
+  await db.runAsync(`UPDATE daily_papers SET ${sets.join(', ')} WHERE date_key = ?`, values);
+}
+
+export async function getDailyPaperByDate(dateKey: string): Promise<DailyPaper | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<DailyPaperRow>(
+    'SELECT * FROM daily_papers WHERE date_key = ?',
+    [dateKey]
+  );
+  return row ? mapDailyPaperRow(row) : null;
+}
+
+export async function getDailyPaperDateKeys(): Promise<string[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ date_key: string }>(
+    `SELECT date_key FROM daily_papers WHERE status = 'ready' ORDER BY date_key DESC`
+  );
+  return rows.map((row) => row.date_key);
 }
 
 /* ==================== Reading CRUD ==================== */

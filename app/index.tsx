@@ -53,6 +53,7 @@ import { showWebViewPanel } from '../src/services/webviewController';
 import {
   getConversationMessageDates,
   getFirstMessageInDateRange,
+  getDailyPaperDateKeys,
 } from '../src/db/operations';
 
 
@@ -198,7 +199,9 @@ export default function ChatScreen() {
   const [monthJumpVisible, setMonthJumpVisible] = useState(false);
   const [monthJumpText, setMonthJumpText] = useState('');
   const [chatDateKeys, setChatDateKeys] = useState<Set<string>>(new Set());
+  const [dailyPaperDateKeys, setDailyPaperDateKeys] = useState<Set<string>>(new Set());
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [dateActionKey, setDateActionKey] = useState<string | null>(null);
   const [dismissedDividers, setDismissedDividers] = useState<Set<string>>(new Set());
   const [visibleFloorMessageId, setVisibleFloorMessageId] = useState<string | null>(null);
   const [inputBarHeight, setInputBarHeight] = useState(INPUT_BAR_FALLBACK_HEIGHT);
@@ -246,8 +249,10 @@ export default function ChatScreen() {
     setCalendarLoading(true);
     try {
       const dates = conversationId ? await getConversationMessageDates(conversationId) : [];
+      const paperDates = await getDailyPaperDateKeys();
       await loadPeriodRecords();
       setChatDateKeys(new Set(dates));
+      setDailyPaperDateKeys(new Set(paperDates));
     } finally {
       setCalendarLoading(false);
     }
@@ -274,7 +279,18 @@ export default function ChatScreen() {
     setMonthJumpVisible(false);
   }, [monthJumpText]);
 
-  const handlePeriodLongPress = useCallback(async (key: string) => {
+  const handleDateLongPress = useCallback((key: string) => {
+    setDateActionKey(key);
+  }, []);
+
+  const openDailyPaper = useCallback((key: string) => {
+    setDateActionKey(null);
+    setCalendarVisible(false);
+    router.push(`/daily-paper/${key}`);
+  }, [router]);
+
+  const handleRecordPeriodDate = useCallback(async (key: string) => {
+    setDateActionKey(null);
     if (pendingPeriodRecord) {
       if (key <= pendingPeriodRecord.startDate) {
         Alert.alert('选择结束日', `请长按 ${pendingPeriodRecord.startDate} 之后的日期作为结束日。`);
@@ -993,6 +1009,7 @@ export default function ChatScreen() {
                 }
                 const key = dateKey(cell);
                 const hasMessages = chatDateKeys.has(key);
+                const hasDailyPaper = dailyPaperDateKeys.has(key);
                 const isActualPeriod = periodDateKeys.has(key);
                 const isPredictedPeriod = !isActualPeriod && predictedPeriodDateKeys.has(key);
                 return (
@@ -1005,20 +1022,23 @@ export default function ChatScreen() {
                       }
                     }}
                     onLongPress={() => {
-                      handlePeriodLongPress(key).catch(() => undefined);
+                      handleDateLongPress(key);
                     }}
                     delayLongPress={360}
                   >
-                    <Text
-                      style={[
-                        styles.calendarDayText,
-                        !hasMessages && styles.calendarDayTextDisabled,
-                        isPredictedPeriod && styles.calendarDayTextPredicted,
-                        isActualPeriod && styles.calendarDayTextPeriod,
-                      ]}
-                    >
-                      {cell.getDate()}
-                    </Text>
+                    <View style={styles.calendarDayWrap}>
+                      <Text
+                        style={[
+                          styles.calendarDayText,
+                          !hasMessages && styles.calendarDayTextDisabled,
+                          isPredictedPeriod && styles.calendarDayTextPredicted,
+                          isActualPeriod && styles.calendarDayTextPeriod,
+                        ]}
+                      >
+                        {cell.getDate()}
+                      </Text>
+                      {hasDailyPaper && <View style={styles.dailyPaperDot} />}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -1066,6 +1086,35 @@ export default function ChatScreen() {
                 <Text style={styles.monthJumpConfirmText}>跳转</Text>
               </Pressable>
             </View>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={!!dateActionKey} transparent animationType="fade" onRequestClose={() => setDateActionKey(null)}>
+        <Pressable style={styles.dateActionOverlay} onPress={() => setDateActionKey(null)}>
+          <View style={styles.dateActionPanel} onStartShouldSetResponder={() => true}>
+            <Text style={styles.dateActionTitle}>{dateActionKey}</Text>
+            <Pressable
+              style={styles.dateActionItem}
+              onPress={() => {
+                if (dateActionKey) {
+                  handleRecordPeriodDate(dateActionKey).catch(() => undefined);
+                }
+              }}
+            >
+              <Text style={styles.dateActionText}>记录</Text>
+              <Text style={styles.dateActionHint}>记录或结束生理期</Text>
+            </Pressable>
+            <View style={styles.dateActionDivider} />
+            <Pressable
+              style={styles.dateActionItem}
+              onPress={() => {
+                if (dateActionKey) openDailyPaper(dateActionKey);
+              }}
+            >
+              <Text style={styles.dateActionText}>日报</Text>
+              <Text style={styles.dateActionHint}>生成和查看这一天的新闻日报</Text>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -1349,6 +1398,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
   },
+  calendarDayWrap: {
+    minWidth: 34,
+    minHeight: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dailyPaperDot: {
+    position: 'absolute',
+    right: 2,
+    bottom: 2,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
   calendarHint: {
     marginTop: 8,
     textAlign: 'center',
@@ -1431,6 +1495,49 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  dateActionOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(20,20,19,0.32)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  dateActionPanel: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dateActionTitle: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 8,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  dateActionItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  dateActionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  dateActionHint: {
+    marginTop: 4,
+    fontSize: 12,
+    color: colors.textTertiary,
+  },
+  dateActionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginHorizontal: 12,
   },
   inputFloating: {
     position: 'absolute',
