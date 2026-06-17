@@ -2165,6 +2165,7 @@ function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
   const [temperature, setTemperature] = useState('');
+  const [generateThinking, setGenerateThinking] = useState(false);
   const [returnNativeThinking, setReturnNativeThinking] = useState(false);
   const [imageEnabled, setImageEnabled] = useState(imageGenerationConfig?.enabled ?? false);
   const [imageBaseUrl, setImageBaseUrl] = useState(imageGenerationConfig?.baseUrl || '');
@@ -2205,6 +2206,7 @@ function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
       setApiKey(config.apiKey);
       setModel(config.model);
       setTemperature(typeof config.temperature === 'number' ? String(config.temperature) : '');
+      setGenerateThinking(!!config.generateThinking);
       setReturnNativeThinking(!!config.returnNativeThinking);
     }
   }
@@ -2215,6 +2217,7 @@ function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     setApiKey('');
     setModel('');
     setTemperature('');
+    setGenerateThinking(false);
     setReturnNativeThinking(false);
     setModels([]);
   }
@@ -2293,8 +2296,9 @@ function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
         body: JSON.stringify({
           model: model.trim(),
           messages: [{ role: 'user', content: 'hi' }],
-          max_tokens: 5,
+          max_tokens: generateThinking ? 64 : 5,
           ...(parsedTemperature !== undefined ? { temperature: parsedTemperature } : {}),
+          ...(generateThinking ? { thinking: { type: 'adaptive' } } : {}),
         }),
       });
       if (!resp.ok) {
@@ -2323,6 +2327,7 @@ function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     const config: NamedAPIConfig = {
       name: trimmedName, baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim(),
       ...(parsedTemperature !== undefined ? { temperature: parsedTemperature } : {}),
+      generateThinking,
       returnNativeThinking,
     };
     saveAPIConfig(config);
@@ -2541,6 +2546,18 @@ function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
           keyboardType="decimal-pad"
           placeholder="留空使用服务默认值"
           placeholderTextColor={colors.textTertiary}
+        />
+      </View>
+      <View style={styles.switchRow}>
+        <View style={styles.switchText}>
+          <Text style={styles.label}>让 AI 生成思维链</Text>
+          <Text style={styles.hint}>开启后，请求会附加 Claude thinking: {'{'} type: 'adaptive' {'}'} 参数。</Text>
+        </View>
+        <Switch
+          value={generateThinking}
+          onValueChange={setGenerateThinking}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor="#FFFFFF"
         />
       </View>
       <View style={styles.switchRow}>

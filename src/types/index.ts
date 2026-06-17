@@ -120,6 +120,7 @@ export interface APIConfig {
   apiKey: string;
   model: string;
   temperature?: number;
+  generateThinking?: boolean;
   returnNativeThinking?: boolean;
 }
 

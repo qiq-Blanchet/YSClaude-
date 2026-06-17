@@ -18,6 +18,7 @@ interface ChatRequest {
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
+  generateThinking?: boolean;
   returnNativeThinking?: boolean;
   sessionId?: string;
   usageContext?: ApiUsageContext;
@@ -195,6 +196,12 @@ function wrapNativeThinking(thinking: string, content: string): string {
   return `<thinking>${trimmedThinking}</thinking>${content}`;
 }
 
+function applyThinkingConfig(body: Record<string, any>, enabled: boolean | undefined): void {
+  if (enabled) {
+    body.thinking = { type: 'adaptive' };
+  }
+}
+
 function normalizeUsage(raw: RawApiUsage | null | undefined): ApiTokenUsage | undefined {
   if (!raw) return undefined;
   return {
@@ -268,7 +275,7 @@ async function recordApiUsage({
 export async function chatCompletion(
   request: ChatRequestWithTools
 ): Promise<ChatCompletionResponse> {
-  const { baseUrl, apiKey, model, messages, maxTokens, temperature, returnNativeThinking, tools, sessionId } = request;
+  const { baseUrl, apiKey, model, messages, maxTokens, temperature, generateThinking, tools, sessionId } = request;
   const startedAt = Date.now();
 
   const url = `${baseUrl.trim().replace(/\/$/, '')}/chat/completions`;
@@ -284,6 +291,7 @@ export async function chatCompletion(
   if (typeof temperature === 'number') {
     body.temperature = temperature;
   }
+  applyThinkingConfig(body, generateThinking);
   if (tools && tools.length > 0) {
     body.tools = tools;
   }
@@ -346,7 +354,7 @@ export async function streamChatCompletion(
   onToken: (token: string) => void,
   signal?: AbortSignal
 ): Promise<StreamChatCompletionResult> {
-  const { baseUrl, apiKey, model, messages, maxTokens, temperature, returnNativeThinking, tools, sessionId } = request;
+  const { baseUrl, apiKey, model, messages, maxTokens, temperature, generateThinking, returnNativeThinking, tools, sessionId } = request;
   const startedAt = Date.now();
 
   const url = `${baseUrl.trim().replace(/\/$/, '')}/chat/completions`;
@@ -363,6 +371,7 @@ export async function streamChatCompletion(
   if (typeof temperature === 'number') {
     body.temperature = temperature;
   }
+  applyThinkingConfig(body, generateThinking);
   if (tools && tools.length > 0) {
     body.tools = tools;
   }
@@ -545,7 +554,7 @@ export async function streamChat(
   onToken: (token: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const { baseUrl, apiKey, model, messages, maxTokens, temperature, returnNativeThinking, sessionId } = request;
+  const { baseUrl, apiKey, model, messages, maxTokens, temperature, generateThinking, returnNativeThinking, sessionId } = request;
   const startedAt = Date.now();
 
   const url = `${baseUrl.trim().replace(/\/$/, '')}/chat/completions`;
@@ -562,6 +571,7 @@ export async function streamChat(
   if (typeof temperature === 'number') {
     body.temperature = temperature;
   }
+  applyThinkingConfig(body, generateThinking);
   if (sessionId) {
     body.session_id = sessionId;
   }

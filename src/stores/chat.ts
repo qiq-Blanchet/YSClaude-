@@ -871,7 +871,14 @@ function isAbortError(err: any): boolean {
  * 返回是否已由工具流式路径处理；若没有启用任何工具则返回 false（调用方走普通流式路径）。
  */
 async function runToolLoop(
-  config: { baseUrl: string; apiKey: string; model: string; temperature?: number; returnNativeThinking?: boolean },
+  config: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    temperature?: number;
+    generateThinking?: boolean;
+    returnNativeThinking?: boolean;
+  },
   requestMessages: ChatMessage[],
   maxTokens: number | undefined,
   onToken: (token: string) => void,
@@ -937,6 +944,7 @@ async function runToolLoop(
       messages,
       maxTokens,
       temperature: config.temperature,
+      generateThinking: config.generateThinking,
       returnNativeThinking: config.returnNativeThinking,
       tools,
       sessionId: options?.sessionId,
@@ -1343,7 +1351,14 @@ async function streamAssistantResponse(
   try {
     let requestStarted = false;
     const handledByToolLoop = await runToolLoop(
-      { baseUrl: config.baseUrl, apiKey: config.apiKey, model: config.model },
+      {
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        model: config.model,
+        temperature: config.temperature,
+        generateThinking: config.generateThinking,
+        returnNativeThinking: config.returnNativeThinking,
+      },
       outgoingMessages,
       settings.maxOutputTokens || undefined,
       onToken,
@@ -1367,6 +1382,7 @@ async function streamAssistantResponse(
           messages: outgoingMessages,
           maxTokens: settings.maxOutputTokens || undefined,
           temperature: config.temperature,
+          generateThinking: config.generateThinking,
           returnNativeThinking: config.returnNativeThinking,
           sessionId,
           usageContext: {
