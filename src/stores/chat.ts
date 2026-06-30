@@ -5,7 +5,7 @@ import { File } from 'expo-file-system';
 import { ChatMessage, streamChat, streamChatCompletion } from '../services/api';
 import { deleteGeneratedImageFile, generateOpenAIImage } from '../services/imageGeneration';
 import { notifyReplyReady } from '../services/notifications';
-import { useSettingsStore } from './settings';
+import { useSettingsStore, type RunCommandConfig } from './settings';
 import { getToolDefinitions, executeTool, getToolLabel, ToolExecutionResult } from '../services/tools';
 import { observeActiveWebView } from '../services/webviewController';
 import { formatWebViewObservation } from '../services/toolModules/webView';
@@ -74,6 +74,7 @@ const FLOATING_STREAM_MIN_SOFT_SEGMENT_CHARS = 18;
 const FLOATING_STREAM_MAX_SEGMENT_CHARS = 72;
 const FLOATING_VISUAL_SEGMENT_INTERVAL_MS = 2000;
 const MAX_IMAGE_GENERATION_REFERENCE_IMAGES = 16;
+const MAX_RUN_COMMAND_PROMPT_CHARS = 4000;
 
 function normalizeReferenceImageUris(uris: string[] | undefined): string[] | undefined {
   if (!uris || uris.length === 0) return undefined;
@@ -89,6 +90,36 @@ function getEnabledFaceReferenceUris(): string[] {
       .filter((reference) => reference.enabled !== false)
       .map((reference) => reference.uri)
   ) || [];
+}
+
+function normalizeRuntimeText(input: unknown, maxChars: number): string {
+  const text = String(input || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim();
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[内容已截断，最多 ${maxChars} 个字符]`;
+}
+
+function buildRunCommandRuntimeContext(config?: RunCommandConfig): string | null {
+  if (
+    !config?.enabled ||
+    !config.sshHost?.trim() ||
+    !config.sshUsername?.trim() ||
+    (!config.sshPassword && !config.sshPrivateKey)
+  ) {
+    return null;
+  }
+
+  const prompt = normalizeRuntimeText(config.customPrompt, MAX_RUN_COMMAND_PROMPT_CHARS);
+  if (!prompt) return null;
+
+  return [
+    '远程命令服务器操作提示：',
+    prompt,
+  ].join('\n');
 }
 
 function combineImageGenerationReferenceUris(
@@ -1387,6 +1418,10 @@ async function streamAssistantResponse(
   const stableSystemSections = [
     settings.systemPrompt.trim() || 'You are a helpful assistant.',
   ];
+  const runCommandRuntimeContext = buildRunCommandRuntimeContext(settings.runCommandConfig);
+  if (runCommandRuntimeContext) {
+    stableSystemSections.push(runCommandRuntimeContext);
+  }
 
   try {
     const favoriteDiaries = await getFavoriteDiaries();
