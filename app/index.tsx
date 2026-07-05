@@ -188,6 +188,8 @@ export default function ChatScreen() {
     openToBottomRequestId,
     isStreaming,
     isPromptCacheKeepaliveRunning,
+    isRemoteInboxSyncing,
+    remoteInboxSyncConversationId,
     error,
     addUserMessage,
     addSystemMessage,
@@ -224,6 +226,9 @@ export default function ChatScreen() {
   const [isInitialPositioning, setIsInitialPositioning] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [incomingLetter, setIncomingLetter] = useState<IncomingLetter | null>(null);
+  const showRemoteInboxLoading = !!conversationId
+    && isRemoteInboxSyncing
+    && remoteInboxSyncConversationId === conversationId;
   const flatListRef = useRef<FlatList<Message>>(null);
   const blurTargetRef = useRef<View | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -950,6 +955,23 @@ export default function ChatScreen() {
     );
   }, [handleLoadNewerMessages, hasNewerMessages, isLoadingNewerMessages]);
 
+  const renderMessageListFooter = useCallback(() => {
+    if (!hasNewerMessages && !showRemoteInboxLoading) return null;
+    return (
+      <>
+        {renderNewerMessagesFooter()}
+        {showRemoteInboxLoading ? (
+          <View style={styles.remoteInboxLoadingContainer}>
+            <View style={styles.remoteInboxLoadingPill}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.remoteInboxLoadingText}>正在接收 AI 消息...</Text>
+            </View>
+          </View>
+        ) : null}
+      </>
+    );
+  }, [hasNewerMessages, renderNewerMessagesFooter, showRemoteInboxLoading]);
+
   const handleEndReached = useCallback(() => {
     if (!hasNewerMessages || isLoadingNewerMessages) return;
     void handleLoadNewerMessages();
@@ -982,7 +1004,7 @@ export default function ChatScreen() {
         }, 120);
       }}
       ListHeaderComponent={renderOlderMessagesHeader}
-      ListFooterComponent={renderNewerMessagesFooter}
+      ListFooterComponent={renderMessageListFooter}
       ListEmptyComponent={<EmptyState />}
     />
   );
@@ -1558,6 +1580,27 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: colors.primary,
+  },
+  remoteInboxLoadingContainer: {
+    alignItems: 'center',
+    paddingTop: 4,
+    paddingBottom: 14,
+  },
+  remoteInboxLoadingPill: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  remoteInboxLoadingText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
   calendarOverlay: {
     flex: 1,

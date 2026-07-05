@@ -2,6 +2,10 @@
 
 buildscript {
   repositories {
+    maven { url 'https://maven.aliyun.com/repository/google' }
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     google()
     mavenCentral()
   }
@@ -15,9 +19,19 @@ buildscript {
 
 allprojects {
   repositories {
+    maven { url 'https://maven.aliyun.com/repository/google' }
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
+  }
+  configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+      if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name.startsWith('kotlin-stdlib')) {
+        details.useVersion '2.1.20'
+      }
+    }
   }
 }
 

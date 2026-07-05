@@ -308,11 +308,16 @@ export interface PromptCacheConfig {
   remoteServerUrl: string;
   remoteAuthToken: string;
   remoteAgentTickEnabled: boolean;
-  pushChannel: 'serverchan' | 'wxpusher' | 'both';
-  serverChanSendKey: string;
+  pushChannel: 'wxpusher' | 'dingtalk';
   wxPusherAppToken: string;
   wxPusherUid: string;
   wxPusherTopicIds: string;
+  dingTalkWebhook: string;
+  dingTalkSecret: string;
+  dingTalkAtMobiles: string;
+  upEndpoint: string;
+  upP256dh: string;
+  upAuth: string;
 }
 
 export interface ImageGenerationFaceReference {
@@ -486,6 +491,11 @@ function normalizePromptCacheConfig(config?: Partial<PromptCacheConfig>): Prompt
     const numeric = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : fallback;
     return Math.min(1439, Math.max(0, numeric));
   };
+  const rawPushChannel = String((config as any)?.pushChannel || '').toLowerCase();
+  const pushChannel: PromptCacheConfig['pushChannel'] =
+    rawPushChannel === 'wxpusher'
+      ? 'wxpusher'
+      : 'dingtalk';
   return {
     enabled: config?.enabled ?? false,
     ttl: config?.ttl === '1h' ? '1h' : '5m',
@@ -497,11 +507,16 @@ function normalizePromptCacheConfig(config?: Partial<PromptCacheConfig>): Prompt
     remoteServerUrl: config?.remoteServerUrl || '',
     remoteAuthToken: config?.remoteAuthToken || '',
     remoteAgentTickEnabled: config?.remoteAgentTickEnabled ?? true,
-    pushChannel: config?.pushChannel === 'serverchan' || config?.pushChannel === 'both' ? config.pushChannel : 'wxpusher',
-    serverChanSendKey: config?.serverChanSendKey || '',
+    pushChannel,
     wxPusherAppToken: config?.wxPusherAppToken || '',
     wxPusherUid: config?.wxPusherUid || '',
     wxPusherTopicIds: config?.wxPusherTopicIds || '',
+    dingTalkWebhook: config?.dingTalkWebhook || '',
+    dingTalkSecret: config?.dingTalkSecret || '',
+    dingTalkAtMobiles: config?.dingTalkAtMobiles || '',
+    upEndpoint: config?.upEndpoint || '',
+    upP256dh: config?.upP256dh || '',
+    upAuth: config?.upAuth || '',
   };
 }
 
@@ -860,11 +875,16 @@ export const useSettingsStore = create<SettingsState>()(
         remoteServerUrl: '',
         remoteAuthToken: '',
         remoteAgentTickEnabled: true,
-        pushChannel: 'wxpusher',
-        serverChanSendKey: '',
+        pushChannel: 'dingtalk',
         wxPusherAppToken: '',
         wxPusherUid: '',
         wxPusherTopicIds: '',
+        dingTalkWebhook: '',
+        dingTalkSecret: '',
+        dingTalkAtMobiles: '',
+        upEndpoint: '',
+        upP256dh: '',
+        upAuth: '',
       },
       imageGenerationConfig: {
         enabled: false,

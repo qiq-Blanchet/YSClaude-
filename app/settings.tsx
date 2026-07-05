@@ -54,7 +54,7 @@ import {
   refreshPromptCacheRemoteServerStatus,
   subscribePromptCacheRemoteSnapshotStatus,
   pushRemotePushConfig,
-  testRemoteServerChanPush,
+  testRemoteDingTalkPush,
   testRemoteWxPusherPush,
 } from '../src/services/promptCacheKeepalive';
 import { useKeyboardHeight } from '../src/hooks/useKeyboardHeight';
@@ -153,9 +153,8 @@ const PROMPT_CACHE_KEEPALIVE_MODE_OPTIONS = [
   { value: 'remote', label: '远程保活' },
 ] as const;
 const PROMPT_CACHE_PUSH_CHANNEL_OPTIONS: Array<{ value: PromptCacheConfig['pushChannel']; label: string }> = [
+  { value: 'dingtalk', label: '钉钉' },
   { value: 'wxpusher', label: 'WxPusher' },
-  { value: 'serverchan', label: 'ServerChan' },
-  { value: 'both', label: 'Both' },
 ];
 const PROMPT_CACHE_COMPATIBILITY_OPTIONS: Array<{ value: PromptCacheCompatibility; label: string }> = [
   { value: 'standard', label: '标准' },
@@ -3129,11 +3128,13 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const [quietEndText, setQuietEndText] = useState(formatClockMinutes(promptCacheConfig?.quietEndMinutes ?? 7 * 60));
   const [remoteServerUrlText, setRemoteServerUrlText] = useState(promptCacheConfig?.remoteServerUrl || '');
   const [remoteAuthTokenText, setRemoteAuthTokenText] = useState(promptCacheConfig?.remoteAuthToken || '');
-  const [serverChanSendKeyText, setServerChanSendKeyText] = useState(promptCacheConfig?.serverChanSendKey || '');
+  const [dingTalkWebhookText, setDingTalkWebhookText] = useState(promptCacheConfig?.dingTalkWebhook || '');
+  const [dingTalkSecretText, setDingTalkSecretText] = useState(promptCacheConfig?.dingTalkSecret || '');
+  const [dingTalkAtMobilesText, setDingTalkAtMobilesText] = useState(promptCacheConfig?.dingTalkAtMobiles || '');
+  const [testingDingTalkPush, setTestingDingTalkPush] = useState(false);
   const [wxPusherAppTokenText, setWxPusherAppTokenText] = useState(promptCacheConfig?.wxPusherAppToken || '');
   const [wxPusherUidText, setWxPusherUidText] = useState(promptCacheConfig?.wxPusherUid || '');
   const [wxPusherTopicIdsText, setWxPusherTopicIdsText] = useState(promptCacheConfig?.wxPusherTopicIds || '');
-  const [testingServerChanPush, setTestingServerChanPush] = useState(false);
   const [testingWxPusherPush, setTestingWxPusherPush] = useState(false);
   const [checkingRemoteKeepalive, setCheckingRemoteKeepalive] = useState(false);
   const [flushingRemoteSnapshot, setFlushingRemoteSnapshot] = useState(false);
@@ -3153,17 +3154,21 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   useEffect(() => {
     setRemoteServerUrlText(promptCacheConfig?.remoteServerUrl || '');
     setRemoteAuthTokenText(promptCacheConfig?.remoteAuthToken || '');
-    setServerChanSendKeyText(promptCacheConfig?.serverChanSendKey || '');
+    setDingTalkWebhookText(promptCacheConfig?.dingTalkWebhook || '');
+    setDingTalkSecretText(promptCacheConfig?.dingTalkSecret || '');
+    setDingTalkAtMobilesText(promptCacheConfig?.dingTalkAtMobiles || '');
     setWxPusherAppTokenText(promptCacheConfig?.wxPusherAppToken || '');
     setWxPusherUidText(promptCacheConfig?.wxPusherUid || '');
     setWxPusherTopicIdsText(promptCacheConfig?.wxPusherTopicIds || '');
   }, [
     promptCacheConfig?.remoteAuthToken,
     promptCacheConfig?.remoteServerUrl,
-    promptCacheConfig?.serverChanSendKey,
+    promptCacheConfig?.dingTalkWebhook,
+    promptCacheConfig?.dingTalkSecret,
+    promptCacheConfig?.dingTalkAtMobiles,
     promptCacheConfig?.wxPusherAppToken,
-    promptCacheConfig?.wxPusherTopicIds,
     promptCacheConfig?.wxPusherUid,
+    promptCacheConfig?.wxPusherTopicIds,
   ]);
 
   useEffect(() => {
@@ -3444,8 +3449,10 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     setPromptCacheConfig({
       remoteServerUrl: remoteServerUrlText.trim(),
       remoteAuthToken: remoteAuthTokenText.trim(),
-      pushChannel: promptCacheConfig?.pushChannel || 'wxpusher',
-      serverChanSendKey: serverChanSendKeyText.trim(),
+      pushChannel: promptCacheConfig?.pushChannel || 'dingtalk',
+      dingTalkWebhook: dingTalkWebhookText.trim(),
+      dingTalkSecret: dingTalkSecretText.trim(),
+      dingTalkAtMobiles: dingTalkAtMobilesText.trim(),
       wxPusherAppToken: wxPusherAppTokenText.trim(),
       wxPusherUid: wxPusherUidText.trim(),
       wxPusherTopicIds: wxPusherTopicIdsText.trim(),
@@ -3456,39 +3463,55 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   function currentPushConfig(): PromptCacheConfig {
     return {
       ...promptCacheConfig,
-      serverChanSendKey: serverChanSendKeyText.trim(),
+      dingTalkWebhook: dingTalkWebhookText.trim(),
+      dingTalkSecret: dingTalkSecretText.trim(),
+      dingTalkAtMobiles: dingTalkAtMobilesText.trim(),
       wxPusherAppToken: wxPusherAppTokenText.trim(),
       wxPusherUid: wxPusherUidText.trim(),
       wxPusherTopicIds: wxPusherTopicIdsText.trim(),
     };
   }
 
-  function handleSaveServerChanSendKey() {
-    const sendKey = serverChanSendKeyText.trim();
-    setPromptCacheConfig({ serverChanSendKey: sendKey });
-    if (sendKey) {
-      // 立即同步到服务端已有会话，无需等下一次快照上传
-      pushRemotePushConfig(currentPushConfig()).catch(() => undefined);
+  function handleSaveDingTalkConfig() {
+    const webhook = dingTalkWebhookText.trim();
+    const secret = dingTalkSecretText.trim();
+    const atMobiles = dingTalkAtMobilesText.trim();
+    setPromptCacheConfig({
+      pushChannel: webhook ? 'dingtalk' : promptCacheConfig?.pushChannel,
+      dingTalkWebhook: webhook,
+      dingTalkSecret: secret,
+      dingTalkAtMobiles: atMobiles,
+    });
+    if (webhook) {
+      pushRemotePushConfig({
+        ...currentPushConfig(),
+        pushChannel: 'dingtalk',
+      }).catch(() => undefined);
     }
-    showToast(sendKey ? 'Server酱 SendKey 已保存' : 'Server酱推送已关闭');
+    showToast(webhook ? '钉钉推送配置已保存' : '钉钉推送已关闭');
   }
 
-  async function handleTestServerChanPush() {
-    if (testingServerChanPush) return;
-    const sendKey = serverChanSendKeyText.trim();
-    if (!sendKey) {
-      showToast('请先填写 Server酱 SendKey');
+  async function handleTestDingTalkPush() {
+    if (testingDingTalkPush) return;
+    const webhook = dingTalkWebhookText.trim();
+    if (!webhook) {
+      showToast('请先填写钉钉机器人 Webhook');
       return;
     }
-    setPromptCacheConfig({ serverChanSendKey: sendKey });
-    setTestingServerChanPush(true);
+    setPromptCacheConfig({
+      pushChannel: 'dingtalk',
+      dingTalkWebhook: webhook,
+      dingTalkSecret: dingTalkSecretText.trim(),
+      dingTalkAtMobiles: dingTalkAtMobilesText.trim(),
+    });
+    setTestingDingTalkPush(true);
     try {
-      const result = await testRemoteServerChanPush(sendKey);
-      showToast(result.ok ? '测试推送已发送，请查看微信/Server酱通道' : (result.error || '测试推送失败'));
+      const result = await testRemoteDingTalkPush(currentPushConfig());
+      showToast(result.ok ? '钉钉测试推送已发送，请查看钉钉群消息' : (result.error || '钉钉测试推送失败'));
     } catch (error: any) {
-      showToast(error?.message || '测试推送失败');
+      showToast(error?.message || '钉钉测试推送失败');
     } finally {
-      setTestingServerChanPush(false);
+      setTestingDingTalkPush(false);
     }
   }
 
@@ -3497,12 +3520,16 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     const uid = wxPusherUidText.trim();
     const topicIds = wxPusherTopicIdsText.trim();
     setPromptCacheConfig({
+      pushChannel: appToken && (uid || topicIds) ? 'wxpusher' : promptCacheConfig?.pushChannel,
       wxPusherAppToken: appToken,
       wxPusherUid: uid,
       wxPusherTopicIds: topicIds,
     });
     if (appToken && (uid || topicIds)) {
-      pushRemotePushConfig(currentPushConfig()).catch(() => undefined);
+      pushRemotePushConfig({
+        ...currentPushConfig(),
+        pushChannel: 'wxpusher',
+      }).catch(() => undefined);
     }
     showToast(appToken && (uid || topicIds) ? 'WxPusher 推送配置已保存' : 'WxPusher 推送已关闭');
   }
@@ -3513,10 +3540,11 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     const uid = wxPusherUidText.trim();
     const topicIds = wxPusherTopicIdsText.trim();
     if (!appToken || (!uid && !topicIds)) {
-      showToast('请先填写 WxPusher AppToken，并填写 UID 或 Topic ID');
+      showToast('请先填写 WxPusher AppToken 和 UID/Topic ID');
       return;
     }
     setPromptCacheConfig({
+      pushChannel: 'wxpusher',
       wxPusherAppToken: appToken,
       wxPusherUid: uid,
       wxPusherTopicIds: topicIds,
@@ -3524,7 +3552,7 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
     setTestingWxPusherPush(true);
     try {
       const result = await testRemoteWxPusherPush(currentPushConfig());
-      showToast(result.ok ? 'WxPusher 测试推送已发送' : (result.error || 'WxPusher 测试推送失败'));
+      showToast(result.ok ? 'WxPusher 测试推送已发送，请查看微信通知' : (result.error || 'WxPusher 测试推送失败'));
     } catch (error: any) {
       showToast(error?.message || 'WxPusher 测试推送失败');
     } finally {
@@ -4037,7 +4065,7 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
             {PROMPT_CACHE_PUSH_CHANNEL_OPTIONS.map((item) => (
               <Pressable
                 key={item.value}
-                style={[styles.segmentedButton, (promptCacheConfig?.pushChannel || 'wxpusher') === item.value && styles.segmentedButtonActive]}
+                style={[styles.segmentedButton, (promptCacheConfig?.pushChannel || 'dingtalk') === item.value && styles.segmentedButtonActive]}
                 onPress={() => {
                   setPromptCacheConfig({ pushChannel: item.value });
                   pushRemotePushConfig({
@@ -4046,43 +4074,65 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
                   }).catch(() => undefined);
                 }}
               >
-                <Text style={[styles.segmentedText, (promptCacheConfig?.pushChannel || 'wxpusher') === item.value && styles.segmentedTextActive]}>
+                <Text style={[styles.segmentedText, (promptCacheConfig?.pushChannel || 'dingtalk') === item.value && styles.segmentedTextActive]}>
                   {item.label}
                 </Text>
               </Pressable>
             ))}
           </View>
-          <Text style={styles.label}>Server酱 SendKey</Text>
-          <Text style={styles.hint}>AI 主动留言时通过 Server酱推送到微信。在 sct.ftqq.com 获取 SendKey；留空则不推送。</Text>
+          <Text style={styles.label}>钉钉机器人 Webhook</Text>
+          <Text style={styles.hint}>AI 主动留言时通过钉钉群机器人发送到钉钉 App。建议在钉钉里建一个只给自己的提醒群，机器人安全设置使用加签。</Text>
           <TextInput
             style={styles.input}
-            value={serverChanSendKeyText}
-            onChangeText={setServerChanSendKeyText}
-            onBlur={handleSaveServerChanSendKey}
-            placeholder="SCTxxxxxxxxxxxx"
+            value={dingTalkWebhookText}
+            onChangeText={setDingTalkWebhookText}
+            onBlur={handleSaveDingTalkConfig}
+            placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="none"
+            keyboardType="url"
+          />
+          <Text style={styles.label}>钉钉加签 Secret（可选）</Text>
+          <TextInput
+            style={styles.input}
+            value={dingTalkSecretText}
+            onChangeText={setDingTalkSecretText}
+            onBlur={handleSaveDingTalkConfig}
+            placeholder="SECxxxxxxxxxxxxxxxxxxxxxxxx"
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             autoCapitalize="none"
           />
+          <Text style={styles.label}>@ 手机号（可选）</Text>
+          <TextInput
+            style={styles.input}
+            value={dingTalkAtMobilesText}
+            onChangeText={setDingTalkAtMobilesText}
+            onBlur={handleSaveDingTalkConfig}
+            placeholder="13800138000,13900139000"
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="none"
+            keyboardType="numbers-and-punctuation"
+          />
           <Pressable
-            style={[styles.importButton, testingServerChanPush && styles.importButtonDisabled]}
-            onPress={handleTestServerChanPush}
-            disabled={testingServerChanPush}
+            style={[styles.importButton, testingDingTalkPush && styles.importButtonDisabled]}
+            onPress={handleTestDingTalkPush}
+            disabled={testingDingTalkPush}
           >
-            {testingServerChanPush ? (
+            {testingDingTalkPush ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.importButtonText}>测试 Server酱推送</Text>
+              <Text style={styles.importButtonText}>测试钉钉推送</Text>
             )}
           </Pressable>
           <Text style={styles.label}>WxPusher AppToken</Text>
-          <Text style={styles.hint}>AI 主动留言时也可通过 WxPusher 推送到微信。UID 和 Topic ID 二选一填写即可，多个值可用逗号或空格分隔。</Text>
+          <Text style={styles.hint}>适合在一加等杀后台严格的手机上作为稳定回退；通知来自 WxPusher/微信，点击后可跳转到 YSClaude 对话。</Text>
           <TextInput
             style={styles.input}
             value={wxPusherAppTokenText}
             onChangeText={setWxPusherAppTokenText}
             onBlur={handleSaveWxPusherConfig}
-            placeholder="AT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            placeholder="AT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             placeholderTextColor={colors.textTertiary}
             secureTextEntry
             autoCapitalize="none"
@@ -4093,11 +4143,11 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
             value={wxPusherUidText}
             onChangeText={setWxPusherUidText}
             onBlur={handleSaveWxPusherConfig}
-            placeholder="UID_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            placeholder="UID_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
           />
-          <Text style={styles.label}>WxPusher Topic IDs</Text>
+          <Text style={styles.label}>WxPusher Topic IDs（可选）</Text>
           <TextInput
             style={styles.input}
             value={wxPusherTopicIdsText}
@@ -4105,8 +4155,8 @@ function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
             onBlur={handleSaveWxPusherConfig}
             placeholder="123,456"
             placeholderTextColor={colors.textTertiary}
-            keyboardType="numbers-and-punctuation"
             autoCapitalize="none"
+            keyboardType="numbers-and-punctuation"
           />
           <Pressable
             style={[styles.importButton, testingWxPusherPush && styles.importButtonDisabled]}

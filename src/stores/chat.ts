@@ -460,6 +460,8 @@ interface ChatState {
   openToBottomRequestId: number;
   isStreaming: boolean;
   isPromptCacheKeepaliveRunning: boolean;
+  isRemoteInboxSyncing: boolean;
+  remoteInboxSyncConversationId: string | null;
   error: string | null;
 
   sendMessage: (content: string, imageUri?: string, imageGenerationReferenceUris?: string[]) => Promise<void>;
@@ -468,7 +470,10 @@ interface ChatState {
   addDailyPaperToLatestConversation: (paper: DailyPaper) => Promise<string>;
   addSystemMessage: (content: string) => Promise<Message | null>;
   enableWebCruise: () => Promise<void>;
-  syncPromptCacheRemoteInbox: () => Promise<void>;
+  syncPromptCacheRemoteInbox: (options?: {
+    preferredConversationId?: string | null;
+    showLoading?: boolean;
+  }) => Promise<void>;
   keepPromptCacheAlive: () => Promise<void>;
   triggerResponse: () => Promise<void>;
   markMessagesForAutoHideAfterResponse: (ids: string[]) => void;
@@ -1006,20 +1011,31 @@ function handlePromptCacheKeepaliveAfterSuccess(
   conversationId: string,
   promptCacheEnabled: boolean,
   promptCacheTtl: PromptCacheTtl,
-  request?: Parameters<typeof syncPromptCacheRemoteSnapshot>[0]['request']
+  options: {
+    request?: Parameters<typeof syncPromptCacheRemoteSnapshot>[0]['request'];
+    hiddenRanges?: HiddenRange[];
+    flush?: boolean;
+  } = {}
 ): void {
   const config = useSettingsStore.getState().promptCacheConfig;
   const shouldKeepAlive = promptCacheEnabled && promptCacheTtl === '1h';
+  const { request, hiddenRanges = [], flush = false } = options;
 
   if (config.keepaliveMode === 'remote') {
-    if (shouldKeepAlive && request) {
-      syncPromptCacheRemoteSnapshot({
-        conversationId,
-        request,
-        agentTools: buildPromptCacheRemoteAgentTools(),
-      }).catch((error) => {
-        console.warn('[PromptCache] 远程保活快照同步失败:', error);
-      });
+    if (shouldKeepAlive) {
+      const requestPromise = request
+        ? Promise.resolve(request)
+        : buildPromptCacheKeepaliveRequest(conversationId, hiddenRanges);
+
+      requestPromise
+        .then((snapshotRequest) => syncPromptCacheRemoteSnapshot({
+          conversationId,
+          request: snapshotRequest,
+          agentTools: buildPromptCacheRemoteAgentTools(),
+        }, { flush }))
+        .catch((error) => {
+          console.warn('[PromptCache] 远程保活快照同步失败:', error);
+        });
     } else {
       disablePromptCacheRemoteKeepalive(conversationId).catch(() => undefined);
     }
@@ -1080,6 +1096,19 @@ function mapRemoteToolTranscript(
 }
 
 let remoteInboxSyncInFlight = false;
+let remoteInboxSyncWaiters: Array<() => void> = [];
+
+function waitForRemoteInboxSyncInFlight(): Promise<void> {
+  return new Promise((resolve) => {
+    remoteInboxSyncWaiters.push(resolve);
+  });
+}
+
+function resolveRemoteInboxSyncWaiters(): void {
+  const waiters = remoteInboxSyncWaiters;
+  remoteInboxSyncWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
 
 // 单个会话的收件同步：直接写本地 SQLite（不依赖该会话是否打开），
 // 若该会话恰好是当前打开的会话，再把新消息追加进内存 state。
@@ -1172,14 +1201,22 @@ async function syncRemoteInboxForConversation(
 // 不再依赖 App 当前打开的会话——冷启动没有打开任何会话时也能把 AI 主动消息写入本地。
 async function syncPromptCacheRemoteInboxImpl(
   get: () => { conversationId: string | null; messages: Message[] },
-  set: (updater: (state: { messages: Message[] }) => { messages: Message[]; error: null }) => void
+  set: (updater: (state: { messages: Message[] }) => { messages: Message[]; error: null }) => void,
+  preferredConversationId?: string | null
 ): Promise<void> {
   const pendingConversations = await fetchPromptCacheRemotePendingConversations();
   if (pendingConversations.length === 0) return;
 
   // 只同步本地存在的会话，避免把其他设备的会话消息写成孤儿记录
   const localConversationIds = new Set((await getAllConversations()).map((conv) => conv.id));
-  for (const pending of pendingConversations) {
+  const syncQueue = preferredConversationId
+    ? [...pendingConversations].sort((a, b) => {
+        if (a.conversationId === preferredConversationId) return -1;
+        if (b.conversationId === preferredConversationId) return 1;
+        return 0;
+      })
+    : pendingConversations;
+  for (const pending of syncQueue) {
     if (!localConversationIds.has(pending.conversationId)) continue;
     try {
       await syncRemoteInboxForConversation(pending.conversationId, get, set);
@@ -1996,25 +2033,6 @@ async function streamAssistantResponse(
       );
       responseTotalTokens = usage?.totalTokens;
     }
-    handlePromptCacheKeepaliveAfterSuccess(
-      conversationId,
-      promptCacheEnabled,
-      promptCacheTtl,
-      {
-        baseUrl: config.baseUrl,
-        apiKey: config.apiKey,
-        model: config.model,
-        messages: outgoingMessages,
-        temperature: config.temperature,
-        generateThinking: config.generateThinking,
-        thinkingEffort,
-        thinkingCompatibility,
-        returnNativeThinking: config.returnNativeThinking,
-        sessionId: sessionId || conversationId,
-        promptCache: promptCacheRequest,
-      }
-    );
-
     const finalMessages = get().messages;
     const lastMsg = finalMessages[finalMessages.length - 1];
     if (isEmptyAssistantMessage(lastMsg)) {
@@ -2037,6 +2055,12 @@ async function streamAssistantResponse(
         settings.tokenWarningThreshold
       );
     }
+    handlePromptCacheKeepaliveAfterSuccess(
+      conversationId,
+      promptCacheEnabled,
+      promptCacheTtl,
+      { hiddenRanges: get().hiddenRanges, flush: true }
+    );
   } catch (err: any) {
     if (isAbortError(err)) {
       floatingStream.cancel();
@@ -2084,6 +2108,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   openToBottomRequestId: 0,
   isStreaming: false,
   isPromptCacheKeepaliveRunning: false,
+  isRemoteInboxSyncing: false,
+  remoteInboxSyncConversationId: null,
   error: null,
 
   // 仅把用户消息加入列表并持久化，不触发 AI 回复。
@@ -2334,14 +2360,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await updateConversation(conversationId, { updatedAt: Date.now() });
   },
 
-  syncPromptCacheRemoteInbox: async () => {
+  syncPromptCacheRemoteInbox: async (options) => {
     // 防止 mount 同步与前台同步并发交错导致双插
-    if (remoteInboxSyncInFlight) return;
+    const preferredConversationId = options?.preferredConversationId || null;
+    const shouldShowLoading = !!options?.showLoading && !!preferredConversationId;
+    if (shouldShowLoading) {
+      set({
+        isRemoteInboxSyncing: true,
+        remoteInboxSyncConversationId: preferredConversationId,
+      });
+    }
+
+    if (remoteInboxSyncInFlight) {
+      try {
+        await waitForRemoteInboxSyncInFlight();
+      } finally {
+        if (shouldShowLoading) {
+          set((state) => (
+            state.remoteInboxSyncConversationId === preferredConversationId
+              ? { isRemoteInboxSyncing: false, remoteInboxSyncConversationId: null }
+              : {}
+          ));
+        }
+      }
+      return;
+    }
+
     remoteInboxSyncInFlight = true;
     try {
-      await syncPromptCacheRemoteInboxImpl(get, set);
+      await syncPromptCacheRemoteInboxImpl(get, set, preferredConversationId);
     } finally {
       remoteInboxSyncInFlight = false;
+      resolveRemoteInboxSyncWaiters();
+      if (shouldShowLoading) {
+        set((state) => (
+          state.remoteInboxSyncConversationId === preferredConversationId
+            ? { isRemoteInboxSyncing: false, remoteInboxSyncConversationId: null }
+            : {}
+        ));
+      }
     }
   },
 
@@ -2382,7 +2439,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         await runKeepalive(1);
       }
 
-      handlePromptCacheKeepaliveAfterSuccess(conversationId, true, request.promptCache.ttl, request);
+      handlePromptCacheKeepaliveAfterSuccess(conversationId, true, request.promptCache.ttl, { request });
     } finally {
       set({ isPromptCacheKeepaliveRunning: false });
     }
@@ -2813,4 +2870,3 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await streamAssistantResponse(get, set, conversationId);
   },
 }));
-

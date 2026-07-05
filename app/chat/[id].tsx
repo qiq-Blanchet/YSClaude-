@@ -28,9 +28,12 @@ export default function ChatDeepLinkScreen() {
     const openConversation = async () => {
       try {
         const chat = useChatStore.getState();
-        await chat.syncPromptCacheRemoteInbox();
-        await useChatStore.getState().loadConversation(conversationId);
+        await chat.loadConversation(conversationId);
         if (!cancelled) {
+          useChatStore.getState().syncPromptCacheRemoteInbox({
+            preferredConversationId: conversationId,
+            showLoading: true,
+          }).catch(() => undefined);
           router.replace('/');
         }
       } catch (openError: any) {

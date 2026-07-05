@@ -127,6 +127,7 @@ let snapshotSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let snapshotSyncDueAt: number | null = null;
 let snapshotFlushAppState: AppStateStatus = AppState.currentState;
 let snapshotSyncInFlight = false;
+let snapshotFlushRequested = false;
 let latestSnapshotPreview: SnapshotPreview | null = null;
 let latestSnapshotPreviewSource: 'local' | 'server' | null = null;
 let latestSnapshotQueuedAt: number | null = null;
@@ -235,30 +236,36 @@ function normalizePreviewText(value: string): string {
 }
 
 function splitPushList(value?: string): string[] {
-  return String(value || '')
-    .split(/[\s,，;；]+/)
+  return (value || '')
+    .split(/[\s,;，；]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
 function buildRemotePushConfig(config?: PromptCacheConfig): Record<string, unknown> | undefined {
-  const channel = config?.pushChannel || 'wxpusher';
-  const serverChanSendKey = config?.serverChanSendKey?.trim() || '';
+  const channel = config?.pushChannel === 'wxpusher' ? 'wxpusher' : 'dingtalk';
   const wxPusherAppToken = config?.wxPusherAppToken?.trim() || '';
   const wxPusherUids = splitPushList(config?.wxPusherUid);
   const wxPusherTopicIds = splitPushList(config?.wxPusherTopicIds)
-    .map((item) => Number(item))
-    .filter((item) => Number.isInteger(item) && item > 0);
+    .map((item) => Number.parseInt(item, 10))
+    .filter((item) => Number.isFinite(item) && item > 0);
+  const dingTalkWebhook = config?.dingTalkWebhook?.trim() || '';
+  const dingTalkSecret = config?.dingTalkSecret?.trim() || '';
+  const dingTalkAtMobiles = splitPushList(config?.dingTalkAtMobiles);
   const push: Record<string, unknown> = {};
   push.provider = channel;
-  if ((channel === 'serverchan' || channel === 'both') && serverChanSendKey) {
-    push.serverChanSendKey = serverChanSendKey;
-  }
-  if ((channel === 'wxpusher' || channel === 'both') && wxPusherAppToken && (wxPusherUids.length > 0 || wxPusherTopicIds.length > 0)) {
+  if (channel === 'wxpusher' && wxPusherAppToken && (wxPusherUids.length > 0 || wxPusherTopicIds.length > 0)) {
     push.wxPusher = {
       appToken: wxPusherAppToken,
       uids: wxPusherUids,
       topicIds: wxPusherTopicIds,
+    };
+  }
+  if (channel === 'dingtalk' && dingTalkWebhook) {
+    push.dingTalk = {
+      webhook: dingTalkWebhook,
+      secret: dingTalkSecret,
+      atMobiles: dingTalkAtMobiles,
     };
   }
   return Object.keys(push).length > 1 ? push : undefined;
@@ -468,7 +475,10 @@ export function subscribePromptCacheRemoteSnapshotStatus(listener: () => void): 
 }
 
 async function flushLatestPromptCacheRemoteSnapshot(): Promise<boolean> {
-  if (snapshotSyncInFlight) return false;
+  if (snapshotSyncInFlight) {
+    snapshotFlushRequested = true;
+    return false;
+  }
   clearSnapshotSyncTimer();
 
   const latestSnapshot = pendingSnapshots[pendingSnapshots.length - 1];
@@ -493,14 +503,24 @@ async function flushLatestPromptCacheRemoteSnapshot(): Promise<boolean> {
       latestSnapshotPreview = buildSnapshotPreview(pendingSnapshots[pendingSnapshots.length - 1]);
       latestSnapshotPreviewSource = 'local';
       latestSnapshotSyncedAt = null;
-      scheduleSnapshotSync();
+      if (snapshotFlushRequested) {
+        snapshotFlushRequested = false;
+        flushLatestPromptCacheRemoteSnapshot().catch((error) => {
+          latestSnapshotSyncError = error?.message || '远程快照同步失败';
+          scheduleSnapshotSync();
+        });
+      } else {
+        scheduleSnapshotSync();
+      }
     } else {
+      snapshotFlushRequested = false;
       latestSnapshotPreview = buildSnapshotPreview(latestSnapshot);
       latestSnapshotPreviewSource = 'local';
       latestSnapshotQueuedAt = null;
       latestSnapshotSyncedAt = Date.now();
     }
   } else if (pendingSnapshots.length > 0) {
+    snapshotFlushRequested = false;
     latestSnapshotSyncError = result.error || '远程快照同步失败';
     scheduleSnapshotSync();
   }
@@ -519,7 +539,10 @@ function scheduleSnapshotSync(): void {
   notifySnapshotStatusListeners();
 }
 
-export async function syncPromptCacheRemoteSnapshot(snapshot: PromptCacheRemoteSnapshot): Promise<boolean> {
+export async function syncPromptCacheRemoteSnapshot(
+  snapshot: PromptCacheRemoteSnapshot,
+  options: { flush?: boolean } = {}
+): Promise<boolean> {
   if (!getRemoteConfig()) return false;
 
   const hadPendingWork = pendingSnapshots.length > 0 || snapshotSyncInFlight || !!snapshotSyncTimer;
@@ -533,7 +556,13 @@ export async function syncPromptCacheRemoteSnapshot(snapshot: PromptCacheRemoteS
   latestSnapshotQueuedAt = Date.now();
   latestSnapshotSyncedAt = null;
   latestSnapshotSyncError = null;
-  if (shouldSyncImmediately) {
+  if (options.flush) {
+    notifySnapshotStatusListeners();
+    flushLatestPromptCacheRemoteSnapshot().catch((error) => {
+      latestSnapshotSyncError = error?.message || '远程快照同步失败';
+      scheduleSnapshotSync();
+    });
+  } else if (shouldSyncImmediately) {
     notifySnapshotStatusListeners();
     flushLatestPromptCacheRemoteSnapshot().catch((error) => {
       latestSnapshotSyncError = error?.message || '远程快照同步失败';
@@ -618,33 +647,25 @@ export async function ackPromptCacheRemoteActivity(conversationId: string, ids: 
   return postRemote('/v1/keepalive/activity/ack', { conversationId, ids });
 }
 
-export async function pushRemoteServerChanKey(serverChanSendKey: string): Promise<boolean> {
-  if (!serverChanSendKey.trim()) return false;
-  return postRemote('/v1/keepalive/push-token', {
-    provider: 'serverchan',
-    serverChanSendKey: serverChanSendKey.trim(),
-  });
-}
-
 export async function pushRemotePushConfig(config: PromptCacheConfig): Promise<boolean> {
   const push = buildRemotePushConfig(config);
   if (!push) return false;
   return postRemote('/v1/keepalive/push-token', push);
 }
 
-export async function testRemoteServerChanPush(serverChanSendKey: string): Promise<{ ok: boolean; error?: string }> {
-  const result = await postRemoteJson('/v1/keepalive/push-test', {
-    provider: 'serverchan',
-    serverChanSendKey: serverChanSendKey.trim() || undefined,
-  });
-  return { ok: result.ok, error: result.error };
-}
-
 export async function testRemoteWxPusherPush(config: PromptCacheConfig): Promise<{ ok: boolean; error?: string }> {
   const push = buildRemotePushConfig({
     ...config,
     pushChannel: 'wxpusher',
-    serverChanSendKey: '',
+  });
+  const result = await postRemoteJson('/v1/keepalive/push-test', push || {});
+  return { ok: result.ok, error: result.error };
+}
+
+export async function testRemoteDingTalkPush(config: PromptCacheConfig): Promise<{ ok: boolean; error?: string }> {
+  const push = buildRemotePushConfig({
+    ...config,
+    pushChannel: 'dingtalk',
   });
   const result = await postRemoteJson('/v1/keepalive/push-test', push || {});
   return { ok: result.ok, error: result.error };
