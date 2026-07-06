@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { lightColors, useThemeColors } from '../src/theme/colors';
+import { settingsPageColors, useSettingsPageColors } from '../src/theme/colors';
 import { createSettingsStyles } from '../src/screens/settings/styles';
 import { WelcomePageTab } from '../src/screens/settings/WelcomePageTab';
 import { TTSConfigTab } from '../src/screens/settings/TTSConfigTab';
@@ -17,12 +17,12 @@ import { ToolConfigTab } from '../src/screens/settings/ToolConfigTab';
 import { useKeyboardHeight } from '../src/hooks/useKeyboardHeight';
 
 
-let colors = lightColors;
+let colors = settingsPageColors;
 const TABS = ['API 配置', '对话设置', 'TTS 配置', '工具设置', '日记', '来信', '悬浮球', '表情包', '欢迎页', '美化'] as const;
 
 
 export default function SettingsScreen() {
-  colors = useThemeColors();
+  colors = useSettingsPageColors();
   styles = useMemo(() => createSettingsStyles(colors), [colors]);
 
   const router = useRouter();

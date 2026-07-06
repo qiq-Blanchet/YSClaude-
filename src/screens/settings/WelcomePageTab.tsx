@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { copyAsync } from 'expo-file-system/legacy';
 import { randomUUID } from 'expo-crypto';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { useSettingsStore } from '../../stores/settings';
 import { createSettingsStyles } from './styles';
 
@@ -62,7 +62,7 @@ function validateWelcomeLogoAsset(asset: ImagePicker.ImagePickerAsset): string |
 }
 
 export function WelcomePageTab({ showToast, keyboardBottomInset }: WelcomePageTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const { appearanceConfig, setAppearanceConfig } = useSettingsStore();
   const [pickingWelcomeLogo, setPickingWelcomeLogo] = useState(false);
@@ -161,7 +161,7 @@ export function WelcomePageTab({ showToast, keyboardBottomInset }: WelcomePageTa
         <Switch
           value={useDefaultGreetings}
           onValueChange={handleDefaultGreetingToggle}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>

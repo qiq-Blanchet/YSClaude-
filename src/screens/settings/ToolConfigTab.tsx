@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, NativeModules, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import {
   useSettingsStore,
   type DailyPaperSourceConfig,
@@ -52,7 +52,7 @@ function inferImageMimeType(uri: string): string {
 }
 
 export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const {
     apiConfigs,
@@ -1671,7 +1671,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
         return (
           <>
             <Text style={styles.toolModalDescription}>AI 可以搜索记忆库并查询日记内容。</Text>
-            <View style={styles.switchRow}><Text style={styles.label}>启用记忆库</Text><Switch value={mvEnabled} onValueChange={setMvEnabled} trackColor={{ true: colors.primary }} /></View>
+            <View style={styles.switchRow}><Text style={styles.label}>启用记忆库</Text><Switch value={mvEnabled} onValueChange={setMvEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
             <View style={styles.field}><Text style={styles.label}>记忆库地址</Text><TextInput style={styles.input} value={mvBaseUrl} onChangeText={setMvBaseUrl} placeholder="https://your-memory-vault.com" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
             <View style={styles.field}><Text style={styles.label}>管理员令牌</Text><TextInput style={styles.input} value={mvAdminToken} onChangeText={setMvAdminToken} placeholder="ADMIN_TOKEN" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View>
             <View style={styles.toolNumberRow}><View style={styles.toolNumberField}><Text style={styles.label}>返回条数</Text><TextInput style={styles.input} value={mvTopK} onChangeText={setMvTopK} keyboardType="number-pad" placeholder="5" placeholderTextColor={colors.textTertiary} /></View><View style={styles.toolNumberField}><Text style={styles.label}>令牌预算</Text><TextInput style={styles.input} value={mvTokenBudget} onChangeText={setMvTokenBudget} keyboardType="number-pad" placeholder="2000" placeholderTextColor={colors.textTertiary} /></View></View>
@@ -1680,14 +1680,14 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
           </>
         );
       case 'webSearch':
-        return (<><Text style={styles.toolModalDescription}>AI 可以通过 Tavily 搜索互联网获取实时信息。</Text><View style={styles.switchRow}><Text style={styles.label}>启用联网搜索</Text><Switch value={wsEnabled} onValueChange={setWsEnabled} trackColor={{ true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>Tavily 密钥</Text><TextInput style={styles.input} value={wsApiKey} onChangeText={setWsApiKey} placeholder="tvly-..." placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View><View style={styles.field}><Text style={styles.label}>搜索结果数量</Text><TextInput style={styles.input} value={wsMaxResults} onChangeText={setWsMaxResults} keyboardType="number-pad" placeholder="5" placeholderTextColor={colors.textTertiary} /></View></>);
+        return (<><Text style={styles.toolModalDescription}>AI 可以通过 Tavily 搜索互联网获取实时信息。</Text><View style={styles.switchRow}><Text style={styles.label}>启用联网搜索</Text><Switch value={wsEnabled} onValueChange={setWsEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>Tavily 密钥</Text><TextInput style={styles.input} value={wsApiKey} onChangeText={setWsApiKey} placeholder="tvly-..." placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View><View style={styles.field}><Text style={styles.label}>搜索结果数量</Text><TextInput style={styles.input} value={wsMaxResults} onChangeText={setWsMaxResults} keyboardType="number-pad" placeholder="5" placeholderTextColor={colors.textTertiary} /></View></>);
       case 'hotboard':
-        return (<><Text style={styles.toolModalDescription}>AI 可以从已选择的平台类型中查询热榜。</Text><View style={styles.switchRow}><Text style={styles.label}>启用热榜查询</Text><Switch value={hbEnabled} onValueChange={setHbEnabled} trackColor={{ true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>UAPI 密钥</Text><TextInput style={styles.input} value={hbApiKey} onChangeText={setHbApiKey} placeholder="Bearer 令牌" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View><View style={styles.platformActions}><Pressable style={styles.platformActionButton} onPress={selectDefaultHotboardPlatforms}><Text style={styles.platformActionText}>默认</Text></Pressable><Pressable style={styles.platformActionButton} onPress={selectAllHotboardPlatforms}><Text style={styles.platformActionText}>全选</Text></Pressable><Pressable style={styles.platformActionButton} onPress={clearHotboardPlatforms}><Text style={styles.platformActionText}>清空</Text></Pressable></View><View style={styles.platformGrid}>{HOTBOARD_PLATFORMS.map((platform) => { const selected = hbPlatformTypes.includes(platform.type); return (<Pressable key={platform.type} style={[styles.platformChip, selected && styles.platformChipSelected]} onPress={() => toggleHotboardPlatform(platform.type)}><Text style={[styles.platformChipLabel, selected && styles.platformChipLabelSelected]}>{platform.label}</Text><Text style={[styles.platformChipType, selected && styles.platformChipTypeSelected]}>{platform.type}</Text></Pressable>); })}</View></>);
+        return (<><Text style={styles.toolModalDescription}>AI 可以从已选择的平台类型中查询热榜。</Text><View style={styles.switchRow}><Text style={styles.label}>启用热榜查询</Text><Switch value={hbEnabled} onValueChange={setHbEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>UAPI 密钥</Text><TextInput style={styles.input} value={hbApiKey} onChangeText={setHbApiKey} placeholder="Bearer 令牌" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View><View style={styles.platformActions}><Pressable style={styles.platformActionButton} onPress={selectDefaultHotboardPlatforms}><Text style={styles.platformActionText}>默认</Text></Pressable><Pressable style={styles.platformActionButton} onPress={selectAllHotboardPlatforms}><Text style={styles.platformActionText}>全选</Text></Pressable><Pressable style={styles.platformActionButton} onPress={clearHotboardPlatforms}><Text style={styles.platformActionText}>清空</Text></Pressable></View><View style={styles.platformGrid}>{HOTBOARD_PLATFORMS.map((platform) => { const selected = hbPlatformTypes.includes(platform.type); return (<Pressable key={platform.type} style={[styles.platformChip, selected && styles.platformChipSelected]} onPress={() => toggleHotboardPlatform(platform.type)}><Text style={[styles.platformChipLabel, selected && styles.platformChipLabelSelected]}>{platform.label}</Text><Text style={[styles.platformChipType, selected && styles.platformChipTypeSelected]}>{platform.type}</Text></Pressable>); })}</View></>);
       case 'dailyPaperSources':
         return (
           <>
             <Text style={styles.toolModalDescription}>每日日报会读取已启用的 RSS 源，再交给当前聊天 API 生成中文日报。</Text>
-            <View style={styles.switchRow}><Text style={styles.label}>使用内置新闻源</Text><Switch value={dailyUseDefaultSources} onValueChange={setDailyUseDefaultSources} trackColor={{ true: colors.primary }} /></View>
+            <View style={styles.switchRow}><Text style={styles.label}>使用内置新闻源</Text><Switch value={dailyUseDefaultSources} onValueChange={setDailyUseDefaultSources} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
             <View style={styles.toolAddPanel}>
               <Text style={styles.sectionTitle}>添加 RSS 来源</Text>
               <TextInput style={styles.input} value={dailySourceName} onChangeText={setDailySourceName} placeholder="来源名称，例如 Reuters" placeholderTextColor={colors.textTertiary} />
@@ -1726,7 +1726,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                       </View>
                     </View>
                     <View style={styles.mcpResourceSwitches}>
-                      <Switch value={source.enabled} onValueChange={(value) => handleUpdateDailySource(source.id, { enabled: value })} trackColor={{ true: colors.primary }} />
+                      <Switch value={source.enabled} onValueChange={(value) => handleUpdateDailySource(source.id, { enabled: value })} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
                       <Pressable style={styles.removeSmallButton} onPress={() => handleRemoveDailySource(source.id)}><Text style={styles.removeSmallButtonText}>删除</Text></Pressable>
                     </View>
                   </View>
@@ -1739,7 +1739,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
         return (
           <>
             <Text style={styles.toolModalDescription}>AI 会通过 SSH 直连这台专用服务器执行 shell 命令，并返回 stdout/stderr。服务器侧不做命令白名单，适合给 AI 独立隔离的工作机。</Text>
-            <View style={styles.switchRow}><Text style={styles.label}>启用远程命令</Text><Switch value={rcEnabled} onValueChange={setRcEnabled} trackColor={{ true: colors.primary }} /></View>
+            <View style={styles.switchRow}><Text style={styles.label}>启用远程命令</Text><Switch value={rcEnabled} onValueChange={setRcEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
             <View style={styles.toolAddPanel}>
               <Text style={styles.sectionTitle}>SSH 配置档案</Text>
               <View style={styles.appearanceThemeSaveRow}>
@@ -1824,7 +1824,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
             <View style={styles.field}><Text style={styles.label}>私钥口令</Text><TextInput style={styles.input} value={rcSshPassphrase} onChangeText={setRcSshPassphrase} placeholder="无口令可留空" placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View>
             <View style={styles.field}><Text style={styles.label}>默认工作目录</Text><TextInput style={styles.input} value={rcDefaultCwd} onChangeText={setRcDefaultCwd} placeholder="/home/ubuntu/app" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
             <View style={styles.field}><Text style={styles.label}>AI 操作提示词</Text><TextInput style={[styles.input, styles.multilineInput]} value={rcCustomPrompt} onChangeText={setRcCustomPrompt} placeholder={'例如：进入项目后先阅读 CLAUDE.md；安装或启动服务前检查 package.json；完成后把运行方式、端口和注意事项维护到 CLAUDE.md。'} placeholderTextColor={colors.textTertiary} autoCapitalize="none" multiline textAlignVertical="top" /></View>
-            <View style={styles.switchRow}><Text style={styles.label}>严格校验主机密钥</Text><Switch value={rcStrictHostKeyChecking} onValueChange={setRcStrictHostKeyChecking} trackColor={{ true: colors.primary }} /></View>
+            <View style={styles.switchRow}><Text style={styles.label}>严格校验主机密钥</Text><Switch value={rcStrictHostKeyChecking} onValueChange={setRcStrictHostKeyChecking} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
             {rcStrictHostKeyChecking && (
               <View style={styles.field}><Text style={styles.label}>known_hosts</Text><TextInput style={[styles.input, styles.multilineInput]} value={rcKnownHosts} onChangeText={setRcKnownHosts} placeholder="example.com ssh-ed25519 AAAA..." placeholderTextColor={colors.textTertiary} autoCapitalize="none" multiline textAlignVertical="top" /></View>
             )}
@@ -1872,7 +1872,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                 <Text style={styles.label}>合并连续消息</Text>
                 <Text style={styles.hint}>同一会话内连续发来的消息会先等待并合并，窗口结束后只回复一次。</Text>
               </View>
-              <Switch value={qqMessageBatchEnabled} onValueChange={setQqMessageBatchEnabled} trackColor={{ true: colors.primary }} />
+              <Switch value={qqMessageBatchEnabled} onValueChange={setQqMessageBatchEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
             </View>
             <View style={styles.field}><Text style={styles.label}>合并等待秒数</Text><TextInput style={styles.input} value={qqMessageBatchWindowSeconds} onChangeText={setQqMessageBatchWindowSeconds} keyboardType="decimal-pad" placeholder="6" placeholderTextColor={colors.textTertiary} /></View>
             <View style={styles.switchRow}>
@@ -1880,14 +1880,14 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                 <Text style={styles.label}>启用表情包</Text>
                 <Text style={styles.hint}>同步 AI 表情包到后端，模型可用 &lt;sticker&gt;名称&lt;/sticker&gt; 发送图片表情。当前 {getQqStickerCount()} 个。</Text>
               </View>
-              <Switch value={qqStickersEnabled} onValueChange={setQqStickersEnabled} trackColor={{ true: colors.primary }} />
+              <Switch value={qqStickersEnabled} onValueChange={setQqStickersEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
             </View>
             <View style={styles.switchRow}>
               <View style={styles.switchText}>
                 <Text style={styles.label}>启用记忆库工具</Text>
                 <Text style={styles.hint}>由后端直接调用云端记忆库，逻辑与主聊天一致。</Text>
               </View>
-              <Switch value={qqMemoryVaultEnabled} onValueChange={setQqMemoryVaultEnabled} trackColor={{ true: colors.primary }} />
+              <Switch value={qqMemoryVaultEnabled} onValueChange={setQqMemoryVaultEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
             </View>
             <View style={styles.field}><Text style={styles.label}>记忆库地址</Text><TextInput style={styles.input} value={qqMemoryVaultBaseUrl} onChangeText={setQqMemoryVaultBaseUrl} placeholder="https://your-memory-vault.com" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
             <View style={styles.toolNumberRow}>
@@ -1900,7 +1900,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                 <Text style={styles.label}>启用联网搜索</Text>
                 <Text style={styles.hint}>由后端通过 Tavily 搜索实时信息。</Text>
               </View>
-              <Switch value={qqWebSearchEnabled} onValueChange={setQqWebSearchEnabled} trackColor={{ true: colors.primary }} />
+              <Switch value={qqWebSearchEnabled} onValueChange={setQqWebSearchEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
             </View>
             <View style={styles.field}><Text style={styles.label}>Tavily 密钥</Text><TextInput style={styles.input} value={qqTavilyApiKey} onChangeText={setQqTavilyApiKey} placeholder="tvly-..." placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" /></View>
             <View style={styles.field}><Text style={styles.label}>搜索结果数量</Text><TextInput style={styles.input} value={qqWebSearchMaxResults} onChangeText={setQqWebSearchMaxResults} keyboardType="number-pad" placeholder="5" placeholderTextColor={colors.textTertiary} /></View>
@@ -1909,7 +1909,7 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                 <Text style={styles.label}>启用自定义 MCP 工具</Text>
                 <Text style={styles.hint}>{getQqMcpEnabledServerCount()} 个服务 · {getQqMcpEnabledToolCount()} 个工具。仅支持 Zeabur 后端可访问的 HTTP MCP。</Text>
               </View>
-              <Switch value={qqMcpEnabled} onValueChange={setQqMcpEnabled} trackColor={{ true: colors.primary }} />
+              <Switch value={qqMcpEnabled} onValueChange={setQqMcpEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
             </View>
             <View style={styles.field}><Text style={styles.label}>每轮最大 MCP 调用次数</Text><TextInput style={styles.input} value={qqMcpMaxToolCalls} onChangeText={setQqMcpMaxToolCalls} keyboardType="number-pad" placeholder="6" placeholderTextColor={colors.textTertiary} /></View>
             <View style={styles.platformActions}>
@@ -1970,19 +1970,19 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                     <Text style={styles.label}>启用语音 TTS</Text>
                     <Text style={styles.hint}>使用 TTS 配置中的 MiniMax 参数；仅 {'<voice>'} 标签内的内容会作为 QQ 语音消息发送。</Text>
                   </View>
-                  <Switch value={qqTtsEnabled} onValueChange={setQqTtsEnabled} trackColor={{ true: colors.primary }} />
+                  <Switch value={qqTtsEnabled} onValueChange={setQqTtsEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
                 </View>
                 <View style={styles.switchRow}>
                   <View style={styles.switchText}>
                     <Text style={styles.label}>启用 QQ 机器人</Text>
                     <Text style={styles.hint}>{qqBackendStatus}</Text>
                   </View>
-                  <Switch value={qqEnabled} onValueChange={setQqEnabled} trackColor={{ true: colors.primary }} />
+                  <Switch value={qqEnabled} onValueChange={setQqEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
                 </View>
-                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>沙箱环境</Text><Text style={styles.hint}>用于 QQ 官方机器人测试环境。</Text></View><Switch value={qqSandbox} onValueChange={setQqSandbox} trackColor={{ true: colors.primary }} /></View>
-                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>后端启动时自动连接</Text><Text style={styles.hint}>保存到后端后，服务重启会按此开关连接 QQ 网关。</Text></View><Switch value={qqAutoConnect} onValueChange={setQqAutoConnect} trackColor={{ true: colors.primary }} /></View>
-                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>允许私聊</Text><Text style={styles.hint}>接收 QQ 用户与机器人的单独对话。</Text></View><Switch value={qqAllowDirectMessages} onValueChange={setQqAllowDirectMessages} trackColor={{ true: colors.primary }} /></View>
-                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>允许频道/群提及</Text><Text style={styles.hint}>仅处理平台推送的机器人提及消息。</Text></View><Switch value={qqAllowGuildMentions} onValueChange={setQqAllowGuildMentions} trackColor={{ true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>沙箱环境</Text><Text style={styles.hint}>用于 QQ 官方机器人测试环境。</Text></View><Switch value={qqSandbox} onValueChange={setQqSandbox} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>后端启动时自动连接</Text><Text style={styles.hint}>保存到后端后，服务重启会按此开关连接 QQ 网关。</Text></View><Switch value={qqAutoConnect} onValueChange={setQqAutoConnect} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>允许私聊</Text><Text style={styles.hint}>接收 QQ 用户与机器人的单独对话。</Text></View><Switch value={qqAllowDirectMessages} onValueChange={setQqAllowDirectMessages} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
+                <View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>允许频道/群提及</Text><Text style={styles.hint}>仅处理平台推送的机器人提及消息。</Text></View><Switch value={qqAllowGuildMentions} onValueChange={setQqAllowGuildMentions} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View>
               </>
             ) : (
               <>
@@ -1995,14 +1995,14 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
                     <Text style={styles.label}>启用微信 ClawBot 通道</Text>
                     <Text style={styles.hint}>微信只作为扫码消息通道，回复仍由 YSClaude AgentCore 生成。</Text>
                   </View>
-                  <Switch value={wechatEnabled} onValueChange={setWechatEnabled} trackColor={{ true: colors.primary }} />
+                  <Switch value={wechatEnabled} onValueChange={setWechatEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
                 </View>
                 <View style={styles.switchRow}>
                   <View style={styles.switchText}>
                     <Text style={styles.label}>微信后端自动连接</Text>
                     <Text style={styles.hint}>服务重启后自动恢复微信长轮询；需要 Zeabur 持久化卷保留扫码状态。</Text>
                   </View>
-                  <Switch value={wechatAutoConnect} onValueChange={setWechatAutoConnect} trackColor={{ true: colors.primary }} />
+                  <Switch value={wechatAutoConnect} onValueChange={setWechatAutoConnect} trackColor={{ false: colors.inputBorder, true: colors.primary }} />
                 </View>
                 <View style={styles.field}><Text style={styles.label}>微信账号 ID</Text><TextInput style={styles.input} value={wechatAccountId} onChangeText={setWechatAccountId} placeholder="扫码后自动写入，可留空自动选择" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
                 <View style={styles.field}><Text style={styles.label}>微信 API Base URL</Text><TextInput style={styles.input} value={wechatBaseUrl} onChangeText={setWechatBaseUrl} placeholder="默认留空" placeholderTextColor={colors.textTertiary} autoCapitalize="none" /></View>
@@ -2021,11 +2021,11 @@ export function ToolConfigTab({ showToast, keyboardBottomInset }: SettingsTabPro
           </>
         );
       case 'webInteraction':
-        return (<><Text style={styles.toolModalDescription}>AI 可以在网页面板中打开、观察、点击和等待。</Text><View style={styles.switchRow}><Text style={styles.label}>启用网页交互</Text><Switch value={wiEnabled} onValueChange={setWiEnabled} trackColor={{ true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>每轮最大操作次数</Text><TextInput style={styles.input} value={wiMaxCalls} onChangeText={setWiMaxCalls} keyboardType="number-pad" placeholder="8" placeholderTextColor={colors.textTertiary} /></View></>);
+        return (<><Text style={styles.toolModalDescription}>AI 可以在网页面板中打开、观察、点击和等待。</Text><View style={styles.switchRow}><Text style={styles.label}>启用网页交互</Text><Switch value={wiEnabled} onValueChange={setWiEnabled} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View><View style={styles.field}><Text style={styles.label}>每轮最大操作次数</Text><TextInput style={styles.input} value={wiMaxCalls} onChangeText={setWiMaxCalls} keyboardType="number-pad" placeholder="8" placeholderTextColor={colors.textTertiary} /></View></>);
       default: {
         const nativeRow = builtInToolCards.find((tool) => tool.key === toolKey);
         if (!nativeRow) return null;
-        return (<><Text style={styles.toolModalDescription}>{nativeRow.intro}</Text><View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>启用 {nativeRow.name}</Text><Text style={styles.hint}>这是设备原生工具，可能需要 Android 系统权限。</Text></View><Switch value={nativeRow.enabled} onValueChange={nativeRow.onValueChange} trackColor={{ true: colors.primary }} /></View></>);
+        return (<><Text style={styles.toolModalDescription}>{nativeRow.intro}</Text><View style={styles.switchRow}><View style={styles.switchText}><Text style={styles.label}>启用 {nativeRow.name}</Text><Text style={styles.hint}>这是设备原生工具，可能需要 Android 系统权限。</Text></View><Switch value={nativeRow.enabled} onValueChange={nativeRow.onValueChange} trackColor={{ false: colors.inputBorder, true: colors.primary }} /></View></>);
       }
     }
   }

@@ -10,7 +10,37 @@ export type AppearanceCssTarget =
   | 'inputBar'
   | 'inputText';
 
-export type AppearanceCssStyles = Partial<Record<AppearanceCssTarget, ViewStyle & TextStyle>>;
+export type AppearanceBlurTint =
+  | 'light'
+  | 'dark'
+  | 'default'
+  | 'extraLight'
+  | 'regular'
+  | 'prominent'
+  | 'systemUltraThinMaterial'
+  | 'systemThinMaterial'
+  | 'systemMaterial'
+  | 'systemThickMaterial'
+  | 'systemChromeMaterial'
+  | 'systemUltraThinMaterialLight'
+  | 'systemThinMaterialLight'
+  | 'systemMaterialLight'
+  | 'systemThickMaterialLight'
+  | 'systemChromeMaterialLight'
+  | 'systemUltraThinMaterialDark'
+  | 'systemThinMaterialDark'
+  | 'systemMaterialDark'
+  | 'systemThickMaterialDark'
+  | 'systemChromeMaterialDark';
+
+export type AppearanceCssRuleStyle = ViewStyle & TextStyle & {
+  backdropFilter?: string;
+  blurIntensity?: number;
+  blurTint?: AppearanceBlurTint;
+};
+export type AppearanceCssStyles = Partial<Record<AppearanceCssTarget, AppearanceCssRuleStyle>> & {
+  selectors?: Record<string, AppearanceCssRuleStyle>;
+};
 
 const SELECTOR_TARGETS: Record<string, AppearanceCssTarget> = {
   '.user-message': 'userMessage',
@@ -23,6 +53,53 @@ const SELECTOR_TARGETS: Record<string, AppearanceCssTarget> = {
   '.input-container': 'inputBar',
   '.input-text': 'inputText',
 };
+
+function normalizeSelector(selector: string): string {
+  return selector.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function getAppearanceCssStyle(
+  styles: AppearanceCssStyles,
+  ...selectors: string[]
+): AppearanceCssRuleStyle | undefined {
+  const merged: AppearanceCssRuleStyle = {};
+
+  selectors.forEach((selector) => {
+    const normalized = normalizeSelector(selector);
+    const selectorStyle = styles.selectors?.[normalized];
+    if (selectorStyle) {
+      Object.assign(merged, selectorStyle);
+    }
+  });
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+export function withoutAppearanceGlassProps(style?: AppearanceCssRuleStyle): AppearanceCssRuleStyle | undefined {
+  if (!style) return undefined;
+  const { backdropFilter, blurIntensity, blurTint, ...viewStyle } = style;
+  return Object.keys(viewStyle).length > 0 ? viewStyle : undefined;
+}
+
+export function getAppearanceGlassConfig(style?: AppearanceCssRuleStyle): {
+  enabled: boolean;
+  intensity: number;
+  tint: AppearanceBlurTint;
+} {
+  const backdropFilter = style?.backdropFilter || '';
+  const blurMatch = backdropFilter.match(/blur\(\s*(\d+(?:\.\d+)?)(?:px)?\s*\)/i);
+  const parsedBlur = blurMatch ? Number(blurMatch[1]) : 0;
+  const fallbackIntensity = parsedBlur > 0
+    ? Math.min(100, Math.max(1, Math.round(parsedBlur * 4)))
+    : 0;
+  const intensity = Math.min(100, Math.max(1, Math.round(style?.blurIntensity || fallbackIntensity || 70)));
+
+  return {
+    enabled: !!style?.blurIntensity || parsedBlur > 0,
+    intensity,
+    tint: style?.blurTint || 'light',
+  };
+}
 
 const COLOR_PROPS = new Set([
   'backgroundColor',
@@ -116,6 +193,11 @@ const KEYWORD_PROPS: Record<string, Set<string>> = {
 const PROPERTY_ALIASES: Record<string, string> = {
   'background': 'backgroundColor',
   'background-color': 'backgroundColor',
+  '-webkit-backdrop-filter': 'backdropFilter',
+  'backdrop-filter': 'backdropFilter',
+  'box-shadow': 'boxShadow',
+  'blur-intensity': 'blurIntensity',
+  'blur-tint': 'blurTint',
   'border-bottom-color': 'borderBottomColor',
   'border-bottom-left-radius': 'borderBottomLeftRadius',
   'border-bottom-right-radius': 'borderBottomRightRadius',
@@ -240,6 +322,35 @@ function parseDeclaration(property: string, value: string): Record<string, unkno
     return style;
   }
 
+  if (prop === 'boxShadow') {
+    if (lowerValue === 'none' || /^[\d\s.,()%#a-z-]+$/i.test(cleanValue)) {
+      style.boxShadow = cleanValue;
+    }
+    return style;
+  }
+
+  if (prop === 'backdropFilter') {
+    if (/^blur\(\s*\d+(?:\.\d+)?(?:px)?\s*\)$/i.test(cleanValue)) {
+      style.backdropFilter = cleanValue;
+    }
+    return style;
+  }
+
+  if (prop === 'blurIntensity') {
+    const next = Number(lowerValue);
+    if (Number.isFinite(next)) {
+      style.blurIntensity = Math.min(100, Math.max(1, Math.round(next)));
+    }
+    return style;
+  }
+
+  if (prop === 'blurTint') {
+    if (/^[a-z][a-z0-9]*$/i.test(cleanValue)) {
+      style.blurTint = cleanValue;
+    }
+    return style;
+  }
+
   if (prop === 'fontWeight') {
     if (lowerValue === 'normal' || lowerValue === 'bold' || /^[1-9]00$/.test(lowerValue)) {
       style.fontWeight = lowerValue;
@@ -295,12 +406,22 @@ export function parseAppearanceCss(css?: string): AppearanceCssStyles {
     if (Object.keys(ruleStyle).length === 0) continue;
 
     selectors.forEach((selector) => {
-      const target = SELECTOR_TARGETS[selector];
-      if (!target) return;
-      styles[target] = {
-        ...(styles[target] || {}),
-        ...ruleStyle,
+      const normalizedSelector = normalizeSelector(selector);
+      styles.selectors = {
+        ...(styles.selectors || {}),
+        [normalizedSelector]: {
+          ...(styles.selectors?.[normalizedSelector] || {}),
+          ...ruleStyle,
+        },
       };
+
+      const target = SELECTOR_TARGETS[normalizedSelector];
+      if (target) {
+        styles[target] = {
+          ...(styles[target] || {}),
+          ...ruleStyle,
+        };
+      }
     });
   }
 

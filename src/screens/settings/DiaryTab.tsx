@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { useSettingsStore } from '../../stores/settings';
 import { useChatStore } from '../../stores/chat';
 import { useDiaryStore } from '../../stores/diary';
@@ -17,7 +17,7 @@ type SettingsTabProps = {
 };
 
 export function DiaryTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const { diaries, loadDiaries, addDiary, editDiary, toggleFavorite, removeDiary } = useDiaryStore();
   // 隐藏楼层随对话独立，与待总结的消息同源，统一从 chat store 取

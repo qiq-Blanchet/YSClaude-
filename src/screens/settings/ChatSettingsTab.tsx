@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { randomUUID } from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import { copyAsync } from 'expo-file-system/legacy';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import {
   type ImageGenerationFaceReference,
   type PromptCacheConfig,
@@ -152,7 +152,7 @@ function deleteLocalImageIfExists(uri?: string) {
 }
 
 export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const {
     maxOutputTokens,
@@ -757,7 +757,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
                   <Switch
                     value={enabled}
                     onValueChange={(value) => handleToggleFaceReference(reference.id, value)}
-                    trackColor={{ false: colors.border, true: colors.primary }}
+                    trackColor={{ false: colors.inputBorder, true: colors.primary }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
@@ -912,7 +912,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
         <Switch
           value={stripThinking}
           onValueChange={setStripThinking}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
 
@@ -929,7 +929,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
             }
             showToast(value ? 'Prompt 缓存已开启' : 'Prompt 缓存已关闭');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
       <Text style={styles.label}>缓存时间</Text>
@@ -964,7 +964,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
             value={!!promptCacheConfig?.remoteKeepaliveEnabled}
             onValueChange={(value) => void handleToggleRemoteKeepalive(value)}
             disabled={switchingRemoteKeepalive}
-            trackColor={{ true: colors.primary }}
+            trackColor={{ false: colors.inputBorder, true: colors.primary }}
           />
         </View>
         <Text style={styles.hint}>远程服务会保存最后一次成功使用 1h cache 的请求快照，并按 55 分钟自动调用保活。自托管时会在服务端保存 API Key 和对话快照。</Text>
@@ -1120,7 +1120,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
                 setPromptCacheConfig({ remoteAgentTickEnabled: value });
                 showToast(value ? '远程自主活动已开启' : '远程自主活动已关闭');
               }}
-              trackColor={{ true: colors.primary }}
+              trackColor={{ false: colors.inputBorder, true: colors.primary }}
             />
           </View>
         </View>
@@ -1136,7 +1136,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
             setPromptCacheConfig({ quietHoursEnabled: value });
             showToast(value ? '远程保活勿扰已开启' : '远程保活勿扰已关闭');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
 
@@ -1179,7 +1179,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
             setPeriodConfig({ sendToAI: value });
             showToast(value ? '生理提醒会按条件发送给 AI' : '生理提醒已停止发送给 AI');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
     </ScrollView>

@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { copyAsync } from 'expo-file-system/legacy';
 import { randomUUID } from 'expo-crypto';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import {
   type AssistantBubbleAppearanceStyle,
   type ChatInputAppearanceStyle,
   type ChatInputIconKey,
+  type MessageAvatarLayout,
   useSettingsStore,
 } from '../../stores/settings';
 import { TopBarIcon, TOP_BAR_ICON_ITEMS } from '../../components/TopBarIcon';
@@ -33,26 +34,11 @@ const CHAT_INPUT_ICON_ITEMS: Array<{ key: ChatInputIconKey; label: string }> = [
   { key: 'sendFocused', label: '聚焦发送' },
   { key: 'stop', label: '停止生成' },
 ];
+const MESSAGE_AVATAR_LAYOUT_OPTIONS: Array<{ key: MessageAvatarLayout; label: string }> = [
+  { key: 'header', label: '上方信息' },
+  { key: 'side', label: '侧边头像' },
+];
 const COLOR_SWATCHES = ['#f1eee7', '#FFFFFF', '#FDE68A', '#BFDBFE', '#FBCFE8', '#DCFCE7', '#2B241D', '#141413'];
-const CUSTOM_CSS_PLACEHOLDER = `.user-message {
-  max-width: 82%;
-}
-
-.user-bubble {
-  background-color: #f1eee7;
-  border-radius: 22px;
-}
-
-.assistant-text {
-  color: #222222;
-  font-size: 17px;
-  line-height: 24px;
-}
-
-.input-bar {
-  background-color: rgba(255,255,255,0.72);
-  border-radius: 28px;
-}`;
 function appearanceImageExtension(asset: ImagePicker.ImagePickerAsset): string {
   const mimeType = asset.mimeType?.toLowerCase();
   if (mimeType === 'image/png') return '.png';
@@ -133,7 +119,7 @@ function isHexColor(value: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(value.trim());
 }
 export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const {
     appearanceConfig,
@@ -178,6 +164,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
   const assistantBubbleTransparent = !!appearanceConfig?.assistantBubbleTransparent;
   const assistantBubbleWidthPercent = appearanceConfig?.assistantBubbleWidthPercent ?? 75;
   const messageAvatarsVisible = !!appearanceConfig?.messageAvatarsVisible;
+  const messageAvatarLayout: MessageAvatarLayout = appearanceConfig?.messageAvatarLayout === 'side' ? 'side' : 'header';
   const messageMetaVisible = appearanceConfig?.messageMetaVisible ?? true;
   const userAvatarImageUri = appearanceConfig?.userAvatarImageUri;
   const assistantAvatarImageUri = appearanceConfig?.assistantAvatarImageUri;
@@ -191,7 +178,6 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
   const userFontSize = appearanceConfig?.userFontSize ?? 16;
   const assistantFontSize = appearanceConfig?.assistantFontSize ?? 16;
   const assistantTextStrokeWidth = appearanceConfig?.assistantTextStrokeWidth ?? 0;
-  const customCss = appearanceConfig?.customCss || '';
   useEffect(() => {
     setUserBubbleColorInput(appearanceConfig?.userBubbleColor || colors.userBubble);
     setAssistantBubbleColorInput(appearanceConfig?.assistantBubbleColor || colors.userBubble);
@@ -421,18 +407,17 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
 
   function handleResetAppearanceConfig() {
     Alert.alert(
-      '清空全部美化',
-      '这会删除所有已保存主题，并将聊天页美化恢复到原始默认。确定继续吗？',
+      '恢复当前美化默认',
+      '这只会将当前聊天页美化恢复到原始默认，已保存的美化主题会保留。确定继续吗？',
       [
         { text: '取消', style: 'cancel' },
         {
-          text: '清空',
+          text: '恢复默认',
           style: 'destructive',
           onPress: () => {
             resetAppearanceConfig();
             setAppearanceThemeName('');
-            setAppearanceThemesExpanded(false);
-            showToast('已恢复原始默认美化');
+            showToast('当前美化已恢复默认');
           },
         },
       ]
@@ -465,7 +450,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
       </View>
 
       <Pressable style={styles.appearanceClearButton} onPress={handleResetAppearanceConfig}>
-        <Text style={styles.appearanceClearText}>一键清空，恢复原始默认</Text>
+        <Text style={styles.appearanceClearText}>一键恢复当前美化默认</Text>
       </Pressable>
 
       <Pressable
@@ -608,7 +593,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ topBarIconsHidden: value });
             showToast(value ? '顶栏图标已隐藏' : '顶栏图标已显示');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
 
@@ -623,7 +608,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ topBarFadeHidden: value });
             showToast(value ? '顶栏有色遮罩已关闭' : '顶栏有色遮罩已开启');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
 
@@ -725,11 +710,40 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ messageAvatarsVisible: value });
             showToast(value ? '消息头像已显示' : '消息头像已隐藏');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
 
       {messageAvatarsVisible && (
+        <>
+          <View style={styles.field}>
+            <Text style={styles.label}>头像布局</Text>
+            <View style={styles.segmentedRow}>
+              {MESSAGE_AVATAR_LAYOUT_OPTIONS.map((item) => (
+                <Pressable
+                  key={item.key}
+                  style={[styles.segmentedButton, messageAvatarLayout === item.key && styles.segmentedButtonActive]}
+                  onPress={() => {
+                    setAppearanceConfig({ messageAvatarLayout: item.key });
+                    showToast(item.key === 'side' ? '头像已改为侧边显示' : '头像已改为上方信息行');
+                  }}
+                >
+                  <Text style={[styles.segmentedText, messageAvatarLayout === item.key && styles.segmentedTextActive]}>
+                    {item.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.hint}>
+              {messageAvatarLayout === 'side'
+                ? 'AI 头像显示在左侧，用户头像显示在右侧，每个气泡都会显示头像。'
+                : '头像、名字、楼层与时间显示在连续消息组的第一条上方。'}
+            </Text>
+          </View>
+        </>
+      )}
+
+      {messageAvatarsVisible && messageAvatarLayout === 'header' && (
         <View style={styles.switchRow}>
           <View style={styles.switchText}>
             <Text style={styles.label}>显示楼层与时间</Text>
@@ -741,7 +755,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
               setAppearanceConfig({ messageMetaVisible: value });
               showToast(value ? '楼层与时间已显示' : '楼层与时间已隐藏');
             }}
-            trackColor={{ true: colors.primary }}
+            trackColor={{ false: colors.inputBorder, true: colors.primary }}
           />
         </View>
       )}
@@ -841,7 +855,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ assistantFooterHidden: value });
             showToast(value ? 'AI 回复尾部标识已隐藏' : 'AI 回复尾部标识已显示');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
       <View style={styles.switchRow}>
@@ -855,7 +869,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ assistantActionsHidden: value });
             showToast(value ? 'AI 气泡功能按键已隐藏' : 'AI 气泡功能按键已显示');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
       <View style={styles.field}>
@@ -881,7 +895,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ userBubbleTransparent: value });
             showToast(value ? '用户气泡已设为透明' : '用户气泡已恢复底色');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
       <View style={styles.field}>
@@ -964,7 +978,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
                 setAppearanceConfig({ assistantBubbleTransparent: value });
                 showToast(value ? 'AI 气泡已设为透明' : 'AI 气泡已恢复底色');
               }}
-              trackColor={{ true: colors.primary }}
+              trackColor={{ false: colors.inputBorder, true: colors.primary }}
             />
           </View>
 
@@ -1101,32 +1115,6 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>高级自定义 CSS</Text>
-      <Text style={styles.hint}>选择器：.user-message、.assistant-message、.user-bubble、.assistant-bubble、.user-text、.assistant-text、.input-bar、.input-text。</Text>
-      <TextInput
-        style={[styles.input, styles.multilineInput, styles.customCssInput]}
-        value={customCss}
-        onChangeText={(value) => setAppearanceConfig({ customCss: value.slice(0, 12000) })}
-        placeholder={CUSTOM_CSS_PLACEHOLDER}
-        placeholderTextColor={colors.textTertiary}
-        autoCapitalize="none"
-        autoCorrect={false}
-        multiline
-        textAlignVertical="top"
-      />
-      <View style={styles.actions}>
-        <Pressable
-          style={[styles.testButton, !customCss.trim() && styles.smallActionButtonDisabled]}
-          onPress={() => {
-            setAppearanceConfig({ customCss: '' });
-            showToast('自定义 CSS 已清空');
-          }}
-          disabled={!customCss.trim()}
-        >
-          <Text style={[styles.testButtonText, !customCss.trim() && styles.smallActionTextDisabled]}>清空 CSS</Text>
-        </Pressable>
-      </View>
-
       <Text style={styles.sectionTitle}>输入框自定义</Text>
       <View style={styles.segmentedRow}>
         {(['default', 'compact'] as ChatInputAppearanceStyle[]).map((styleKey) => (
@@ -1167,7 +1155,7 @@ export function AppearanceTab({ showToast, keyboardBottomInset }: AppearanceTabP
             setAppearanceConfig({ inputBackgroundTransparent: value });
             showToast(value ? '输入框背景已设为透明' : '输入框背景已恢复底色');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
 

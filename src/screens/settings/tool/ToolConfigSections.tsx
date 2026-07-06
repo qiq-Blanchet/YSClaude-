@@ -1,4 +1,4 @@
-import { Pressable, Switch, Text, TextInput, View } from 'react-native';
+﻿import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 export type BuiltInToolCard = {
   key: string;
@@ -73,7 +73,7 @@ export function BuiltInToolsSection({
                 <Switch
                   value={tool.enabled}
                   onValueChange={tool.onValueChange}
-                  trackColor={{ false: colors.border, true: colors.primary }}
+                  trackColor={{ false: colors.inputBorder, true: colors.primary }}
                   thumbColor="#FFFFFF"
                 />
               </View>
@@ -161,7 +161,7 @@ export function McpToolsSection({
                     <Switch
                       value={server.enabled}
                       onValueChange={(value) => onUpdateServer(server.id, { enabled: value })}
-                      trackColor={{ false: colors.border, true: colors.primary }}
+                      trackColor={{ false: colors.inputBorder, true: colors.primary }}
                       thumbColor="#FFFFFF"
                     />
                   </View>

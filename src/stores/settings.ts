@@ -14,6 +14,7 @@ export type ChatInputIconKey =
 
 export type ChatInputAppearanceStyle = 'default' | 'compact';
 export type AssistantBubbleAppearanceStyle = 'plain' | 'bubble';
+export type MessageAvatarLayout = 'header' | 'side';
 
 export interface AppearanceThemeSnapshot {
   topBarIconUris: Partial<Record<TopBarIconKey, string>>;
@@ -33,6 +34,7 @@ export interface AppearanceThemeSnapshot {
   assistantBubbleRadius?: number;
   assistantBubbleWidthPercent?: number;
   messageAvatarsVisible?: boolean;
+  messageAvatarLayout?: MessageAvatarLayout;
   messageMetaVisible?: boolean;
   userAvatarImageUri?: string;
   assistantAvatarImageUri?: string;
@@ -539,6 +541,7 @@ const DEFAULT_APPEARANCE_CONFIG: AppearanceConfig = {
   useDefaultGreetings: false,
   defaultGreetingName: '',
   messageAvatarsVisible: false,
+  messageAvatarLayout: 'header',
   messageMetaVisible: true,
   messageAvatarRadius: 18,
   userDisplayName: 'You',
@@ -586,6 +589,7 @@ function snapshotAppearanceConfig(config?: AppearanceConfig): AppearanceThemeSna
     assistantBubbleRadius: source.assistantBubbleRadius,
     assistantBubbleWidthPercent: source.assistantBubbleWidthPercent,
     messageAvatarsVisible: source.messageAvatarsVisible,
+    messageAvatarLayout: source.messageAvatarLayout === 'side' ? 'side' : 'header',
     messageMetaVisible: source.messageMetaVisible,
     userAvatarImageUri: source.userAvatarImageUri,
     assistantAvatarImageUri: source.assistantAvatarImageUri,
@@ -1220,15 +1224,20 @@ export const useSettingsStore = create<SettingsState>()(
           };
         }),
       resetAppearanceConfig: () =>
-        set((state) => ({
-          appearanceConfig: {
-            ...createDefaultAppearanceConfig(),
-            customGreetings: state.appearanceConfig?.customGreetings || '',
-            welcomeLogoImageUri: state.appearanceConfig?.welcomeLogoImageUri,
-            useDefaultGreetings: state.appearanceConfig?.useDefaultGreetings ?? false,
-            defaultGreetingName: state.appearanceConfig?.defaultGreetingName || '',
-          },
-        })),
+        set((state) => {
+          const current = state.appearanceConfig || DEFAULT_APPEARANCE_CONFIG;
+          return {
+            appearanceConfig: {
+              ...createDefaultAppearanceConfig(),
+              customGreetings: current.customGreetings || '',
+              welcomeLogoImageUri: current.welcomeLogoImageUri,
+              useDefaultGreetings: current.useDefaultGreetings ?? false,
+              defaultGreetingName: current.defaultGreetingName || '',
+              appearanceThemes: current.appearanceThemes || [],
+              activeAppearanceThemeId: undefined,
+            },
+          };
+        }),
     }),
     {
       name: 'ysclaude-settings',

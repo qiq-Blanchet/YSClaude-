@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { copyAsync } from 'expo-file-system/legacy';
 import { randomUUID } from 'expo-crypto';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { type CustomSticker, type StickerOwner, useSettingsStore } from '../../stores/settings';
 import { buildStickerDefinitions, normalizeStickerName } from '../../utils/stickers';
 import { createSettingsStyles } from './styles';
@@ -75,7 +75,7 @@ function parseStickerImportLine(line: string): { name: string; uri: string } | n
 }
 
 export function StickerTab({ showToast, keyboardBottomInset }: StickerTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const {
     stickerConfig,
@@ -255,7 +255,7 @@ export function StickerTab({ showToast, keyboardBottomInset }: StickerTabProps) 
             setStickerSuggestionsEnabled(value);
             showToast(value ? '表情包推荐已开启' : '表情包推荐已关闭');
           }}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
       <View style={styles.segmentedRow}>

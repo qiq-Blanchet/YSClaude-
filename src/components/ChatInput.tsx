@@ -22,7 +22,7 @@ import { lightColors, useThemeColors, type ThemeColors } from '../theme/colors';
 
 import { useSettingsStore } from '../stores/settings';
 import { buildStickerDefinitions, normalizeStickerName, type StickerDefinition } from '../utils/stickers';
-import { parseAppearanceCss } from '../utils/appearanceCss';
+import { getAppearanceCssStyle, parseAppearanceCss } from '../utils/appearanceCss';
 import {
   formatMcpPromptResult,
   formatMcpResourceResult,
@@ -35,6 +35,20 @@ let colors = lightColors;
 const STICKER_PANEL_HEIGHT = Math.min(420, Dimensions.get('window').height * 0.48);
 const MCP_PANEL_HEIGHT = Math.min(560, Dimensions.get('window').height * 0.68);
 const MAX_IMAGE_REFERENCE_COUNT = 16;
+const CUSTOM_CSS_MAX_LENGTH = 12000;
+const CUSTOM_CSS_PLACEHOLDER = `.user-bubble {
+  background-color: rgba(255,255,255,0.72);
+  border-radius: 22px;
+}
+
+.assistant-bubble {
+  backdrop-filter: blur(18px);
+  background-color: rgba(255,255,255,0.24);
+}
+
+.top-bar {
+  height: 112px;
+}`;
 type McpPanelTab = 'tools' | 'resources' | 'prompts';
 
 function clampNumber(value: number | undefined, fallback: number, min: number, max: number) {
@@ -98,6 +112,8 @@ export function ChatInput({
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [stickerPickerVisible, setStickerPickerVisible] = useState(false);
   const [optionsMenuVisible, setOptionsMenuVisible] = useState(false);
+  const [cssEditorVisible, setCssEditorVisible] = useState(false);
+  const [cssDraft, setCssDraft] = useState('');
   const [mcpPanelVisible, setMcpPanelVisible] = useState(false);
   const [mcpSelectedServerId, setMcpSelectedServerId] = useState<string | null>(null);
   const [mcpTab, setMcpTab] = useState<McpPanelTab>('resources');
@@ -107,11 +123,20 @@ export function ChatInput({
   const responseTouchStartedRef = useRef(false);
   const sendInFlightRef = useRef(false);
   const insets = useSafeAreaInsets();
-  const { apiConfigs, activeConfigIndex, appearanceConfig, stickerConfig, mcpToolConfig, setMcpToolConfig } = useSettingsStore();
+  const {
+    apiConfigs,
+    activeConfigIndex,
+    appearanceConfig,
+    stickerConfig,
+    mcpToolConfig,
+    setAppearanceConfig,
+    setMcpToolConfig,
+  } = useSettingsStore();
   const customCssStyles = useMemo(
     () => parseAppearanceCss(appearanceConfig?.customCss),
     [appearanceConfig?.customCss]
   );
+  const cssStyle = (...selectors: string[]) => getAppearanceCssStyle(customCssStyles, ...selectors);
   const current = apiConfigs[activeConfigIndex];
   const currentModel = current?.name || current?.model || '未配置';
   const mcpServers = mcpToolConfig?.servers || [];
@@ -388,8 +413,30 @@ export function ChatInput({
     return inputIconUris.sendIdle ? { uri: inputIconUris.sendIdle } : require('../../assets/getresponse1.png');
   };
 
+  const handleOpenCssEditor = () => {
+    setCssDraft((appearanceConfig?.customCss || '').slice(0, CUSTOM_CSS_MAX_LENGTH));
+    setOptionsMenuVisible(false);
+    setCssEditorVisible(true);
+  };
+
+  const handleSaveCustomCss = () => {
+    setAppearanceConfig({ customCss: cssDraft.slice(0, CUSTOM_CSS_MAX_LENGTH) });
+    setCssEditorVisible(false);
+  };
+
+  const handleClearCustomCss = () => {
+    setCssDraft('');
+    setAppearanceConfig({ customCss: '' });
+  };
+
   return (
-    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+    <View
+      style={[
+        styles.wrapper,
+        { paddingBottom: Math.max(insets.bottom, 12) },
+        cssStyle('.input-wrapper', '.chat-input-wrapper'),
+      ]}
+    >
       {suggestedStickers.length > 0 && (
         <View style={styles.suggestionPanel}>
           <ScrollView
@@ -418,6 +465,7 @@ export function ChatInput({
           hasCustomInputSurface && styles.customContainer,
           isCompactInput && styles.compactContainer,
           customCssStyles.inputBar,
+          cssStyle('.chat-input', '.input-container', '.input-bar'),
         ]}
       >
         {inputBackgroundImageUri && (
@@ -427,8 +475,8 @@ export function ChatInput({
           <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: inputOverlayBackground }]} />
         )}
         {pendingImage && !isCompactInput && (
-          <View style={styles.previewRow}>
-            <View style={styles.previewWrap}>
+          <View style={[styles.previewRow, cssStyle('.input-preview-row')]}>
+            <View style={[styles.previewWrap, cssStyle('.input-preview')]}>
               <Image source={{ uri: pendingImage }} style={styles.previewImage} resizeMode="cover" />
               <Pressable style={styles.previewClose} onPress={() => setPendingImage(null)}>
                 <Text style={styles.previewCloseText}>✕</Text>
@@ -437,14 +485,14 @@ export function ChatInput({
           </View>
         )}
         {pendingImageRefs.length > 0 && !isCompactInput && (
-          <View style={styles.referencePreviewRow}>
+          <View style={[styles.referencePreviewRow, cssStyle('.input-reference-row')]}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.referencePreviewList}
             >
               {pendingImageRefs.map((uri, index) => (
-                <View key={`${uri}-${index}`} style={styles.referencePreviewWrap}>
+                <View key={`${uri}-${index}`} style={[styles.referencePreviewWrap, cssStyle('.input-reference-preview')]}>
                   <Image source={{ uri }} style={styles.referencePreviewImage} resizeMode="cover" />
                   <Pressable style={styles.previewClose} onPress={() => removeImageReference(uri)}>
                     <Text style={styles.previewCloseText}>x</Text>
@@ -455,8 +503,8 @@ export function ChatInput({
           </View>
         )}
         {isCompactInput ? (
-          <View style={styles.compactRow}>
-            <Pressable style={styles.optionsButton} onPress={() => setOptionsMenuVisible(true)}>
+          <View style={[styles.compactRow, cssStyle('.input-compact-row')]}>
+            <Pressable style={[styles.optionsButton, cssStyle('.options-button')]} onPress={() => setOptionsMenuVisible(true)}>
               <Image
                 source={inputIconUris.options ? { uri: inputIconUris.options } : require('../../assets/optionsbutton.png')}
                 style={styles.optionsImage}
@@ -480,7 +528,7 @@ export function ChatInput({
               </View>
             )}
             <TextInput
-              style={[styles.input, styles.compactInput, customCssStyles.inputText]}
+              style={[styles.input, styles.compactInput, customCssStyles.inputText, cssStyle('.input-text')]}
               value={text}
               onChangeText={handleChangeText}
               onSubmitEditing={() => void handleSend(text)}
@@ -495,8 +543,8 @@ export function ChatInput({
               onFocus={() => setIsInputFocused(true)}
               onBlur={() => setIsInputFocused(false)}
             />
-            <View style={styles.rightButtons}>
-              <Pressable style={styles.stickerButton} onPress={() => setStickerPickerVisible(true)}>
+            <View style={[styles.rightButtons, cssStyle('.input-actions')]}>
+              <Pressable style={[styles.stickerButton, cssStyle('.sticker-button')]} onPress={() => setStickerPickerVisible(true)}>
                 <Image
                   source={inputIconUris.sticker ? { uri: inputIconUris.sticker } : require('../../assets/sticker.png')}
                   style={styles.stickerButtonImage}
@@ -504,7 +552,7 @@ export function ChatInput({
                 />
               </Pressable>
               <Pressable
-                style={styles.sendButton}
+                style={[styles.sendButton, cssStyle('.send-button')]}
                 onPressIn={() => void handleGetResponsePressIn()}
                 onPress={() => void handleGetResponsePress()}
               >
@@ -519,7 +567,7 @@ export function ChatInput({
         ) : (
           <>
             <TextInput
-              style={[styles.input, customCssStyles.inputText]}
+              style={[styles.input, customCssStyles.inputText, cssStyle('.input-text')]}
               value={text}
               onChangeText={handleChangeText}
               onSubmitEditing={() => void handleSend(text)}
@@ -534,8 +582,8 @@ export function ChatInput({
               onFocus={() => setIsInputFocused(true)}
               onBlur={() => setIsInputFocused(false)}
             />
-            <View style={styles.toolbar}>
-          <Pressable style={styles.optionsButton} onPress={() => setOptionsMenuVisible(true)}>
+            <View style={[styles.toolbar, cssStyle('.input-toolbar')]}>
+          <Pressable style={[styles.optionsButton, cssStyle('.options-button')]} onPress={() => setOptionsMenuVisible(true)}>
             <Image
               source={inputIconUris.options ? { uri: inputIconUris.options } : require('../../assets/optionsbutton.png')}
               style={styles.optionsImage}
@@ -543,12 +591,12 @@ export function ChatInput({
             />
           </Pressable>
 
-          <Pressable style={styles.modelPill} onPress={onModelPress}>
+          <Pressable style={[styles.modelPill, cssStyle('.model-pill')]} onPress={onModelPress}>
             <Text style={styles.modelText} numberOfLines={1}>{currentModel}</Text>
           </Pressable>
 
-          <View style={styles.rightButtons}>
-            <Pressable style={styles.stickerButton} onPress={() => setStickerPickerVisible(true)}>
+          <View style={[styles.rightButtons, cssStyle('.input-actions')]}>
+            <Pressable style={[styles.stickerButton, cssStyle('.sticker-button')]} onPress={() => setStickerPickerVisible(true)}>
               <Image
                 source={inputIconUris.sticker ? { uri: inputIconUris.sticker } : require('../../assets/sticker.png')}
                 style={styles.stickerButtonImage}
@@ -556,7 +604,7 @@ export function ChatInput({
               />
             </Pressable>
             <Pressable
-              style={styles.sendButton}
+              style={[styles.sendButton, cssStyle('.send-button')]}
               onPressIn={() => void handleGetResponsePressIn()}
               onPress={() => void handleGetResponsePress()}
             >
@@ -622,8 +670,58 @@ export function ChatInput({
             <Pressable style={styles.optionItem} onPress={() => void pickImageReferences()}>
               <Text style={styles.optionText}>生图参考图</Text>
             </Pressable>
+            <View style={styles.optionDivider} />
+            <Pressable style={styles.optionItem} onPress={handleOpenCssEditor}>
+              <Text style={styles.optionText}>自定义 CSS</Text>
+            </Pressable>
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal transparent visible={cssEditorVisible} animationType="fade" onRequestClose={() => setCssEditorVisible(false)}>
+        <KeyboardAvoidingView
+          style={styles.cssEditorKeyboardAvoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Math.max(insets.bottom, 12)}
+        >
+          <View style={styles.cssEditorOverlay}>
+            <Pressable style={styles.cssEditorBackdrop} onPress={() => setCssEditorVisible(false)} />
+            <View style={styles.cssEditorPanel} onStartShouldSetResponder={() => true}>
+              <View style={styles.cssEditorHeader}>
+                <View style={styles.cssEditorTitleBlock}>
+                  <Text style={styles.cssEditorTitle}>自定义 CSS</Text>
+                  <Text style={styles.cssEditorHint}>可用类名见 docs/主聊天页自定义CSS类.md</Text>
+                </View>
+                <Pressable style={styles.cssEditorCloseButton} onPress={() => setCssEditorVisible(false)}>
+                  <Text style={styles.cssEditorCloseText}>关闭</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                style={styles.cssEditorInput}
+                value={cssDraft}
+                onChangeText={(value) => setCssDraft(value.slice(0, CUSTOM_CSS_MAX_LENGTH))}
+                placeholder={CUSTOM_CSS_PLACEHOLDER}
+                placeholderTextColor={colors.textTertiary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                textAlignVertical="top"
+              />
+              <View style={styles.cssEditorFooter}>
+                <Pressable
+                  style={[styles.cssEditorSecondaryButton, !cssDraft.trim() && styles.cssEditorButtonDisabled]}
+                  onPress={handleClearCustomCss}
+                  disabled={!cssDraft.trim()}
+                >
+                  <Text style={[styles.cssEditorSecondaryText, !cssDraft.trim() && styles.optionTextDisabled]}>清空</Text>
+                </Pressable>
+                <Pressable style={styles.cssEditorPrimaryButton} onPress={handleSaveCustomCss}>
+                  <Text style={styles.cssEditorPrimaryText}>保存</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal transparent visible={mcpPanelVisible} animationType="fade" onRequestClose={() => setMcpPanelVisible(false)}>
@@ -1142,6 +1240,108 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.inputBorder,
     marginHorizontal: 10,
+  },
+  cssEditorKeyboardAvoider: {
+    flex: 1,
+  },
+  cssEditorOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  cssEditorBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  cssEditorPanel: {
+    marginHorizontal: 12,
+    marginBottom: 96,
+    maxHeight: Math.min(560, Dimensions.get('window').height * 0.72),
+    backgroundColor: colors.inputBackground,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+    boxShadow: '0 8px 18px rgba(0,0,0,0.18)',
+  },
+  cssEditorHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cssEditorTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cssEditorTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  cssEditorHint: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textTertiary,
+  },
+  cssEditorCloseButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceHover,
+  },
+  cssEditorCloseText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  cssEditorInput: {
+    minHeight: 260,
+    maxHeight: 360,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.inputBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+  },
+  cssEditorFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cssEditorSecondaryButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceHover,
+  },
+  cssEditorButtonDisabled: {
+    opacity: 0.55,
+  },
+  cssEditorSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.danger,
+  },
+  cssEditorPrimaryButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+  },
+  cssEditorPrimaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   mcpOverlay: {
     flex: 1,

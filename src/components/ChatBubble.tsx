@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Image, Alert, TextInput, Modal, Dimensions, ScrollView, ActivityIndicator, type TextStyle } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Image, Alert, TextInput, Modal, Dimensions, ScrollView, ActivityIndicator, type ImageStyle, type TextStyle } from 'react-native';
 import { NativeViewGestureHandler, ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import Markdown from '@ronradtke/react-native-markdown-display';
+import { BlurView } from 'expo-blur';
 import { Message, type GeneratedPicture, type ToolInvocation } from '../types';
 import { lightColors, useThemeColors, type ThemeColors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
@@ -16,7 +17,12 @@ import { buildStickerDefinitions, getStickerByName, hasStickerToken, isStickerOn
 import { formatSmartTime } from '../utils/time';
 import { getLinkCardInfo, getSingleHttpUrlMessage } from '../utils/sharedLinks';
 import { parseDailyPaperCardMessage, type DailyPaperCardPayload } from '../utils/dailyPaperShare';
-import { parseAppearanceCss } from '../utils/appearanceCss';
+import {
+  getAppearanceCssStyle,
+  getAppearanceGlassConfig,
+  parseAppearanceCss,
+  withoutAppearanceGlassProps,
+} from '../utils/appearanceCss';
 import { MarkdownCodeBlock } from './MarkdownCodeBlock';
 
 
@@ -123,6 +129,7 @@ interface Props {
   isHidden?: boolean;
   floorNumber?: number;
   showFloorNumber?: boolean;
+  showAvatarHeader?: boolean;
   onBubblePress?: () => void;
 }
 
@@ -321,24 +328,42 @@ function trimSegmentWithOffset(text: string, start: number): { content: string; 
 
 function splitParagraphSegments(text: string, start: number): Array<{ content: string; start: number }> {
   if (!text) return [];
-  if (text.includes('```')) {
-    const segment = trimSegmentWithOffset(text, start);
-    return segment ? [segment] : [];
-  }
-
   const segments: Array<{ content: string; start: number }> = [];
   const paragraphBreakPattern = /\n{2,}/g;
+
+  function pushParagraphs(source: string, sourceStart: number) {
+    paragraphBreakPattern.lastIndex = 0;
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = paragraphBreakPattern.exec(source)) !== null) {
+      const segment = trimSegmentWithOffset(source.slice(cursor, match.index), sourceStart + cursor);
+      if (segment) segments.push(segment);
+      cursor = paragraphBreakPattern.lastIndex;
+    }
+
+    const finalSegment = trimSegmentWithOffset(source.slice(cursor), sourceStart + cursor);
+    if (finalSegment) segments.push(finalSegment);
+  }
+
+  const fencePattern = /```[\s\S]*?(?:```|$)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = paragraphBreakPattern.exec(text)) !== null) {
-    const segment = trimSegmentWithOffset(text.slice(cursor, match.index), start + cursor);
-    if (segment) segments.push(segment);
-    cursor = paragraphBreakPattern.lastIndex;
+  while ((match = fencePattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      pushParagraphs(text.slice(cursor, match.index), start + cursor);
+    }
+
+    const codeSegment = trimSegmentWithOffset(match[0], start + match.index);
+    if (codeSegment) segments.push(codeSegment);
+    cursor = fencePattern.lastIndex;
   }
 
-  const finalSegment = trimSegmentWithOffset(text.slice(cursor), start + cursor);
-  if (finalSegment) segments.push(finalSegment);
+  if (cursor < text.length) {
+    pushParagraphs(text.slice(cursor), start + cursor);
+  }
+
   return segments;
 }
 
@@ -526,6 +551,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   isHidden,
   floorNumber,
   showFloorNumber,
+  showAvatarHeader = true,
   onBubblePress,
 }: Props) {
   colors = useThemeColors();
@@ -537,6 +563,38 @@ export const ChatBubble = React.memo(function ChatBubble({
     () => parseAppearanceCss(appearanceConfig?.customCss),
     [appearanceConfig?.customCss]
   );
+  const cssStyle = (...selectors: string[]) => getAppearanceCssStyle(customCssStyles, ...selectors);
+  const imageCssStyle = (...selectors: string[]) => cssStyle(...selectors) as ImageStyle | undefined;
+  const customUserTextCssStyle = useMemo(
+    () => ({
+      ...(customCssStyles.userText || {}),
+      ...(getAppearanceCssStyle(customCssStyles, '.user-text', '.chat-user-text') || {}),
+    }),
+    [customCssStyles]
+  );
+  const customAssistantTextCssStyle = useMemo(
+    () => ({
+      ...(customCssStyles.assistantText || {}),
+      ...(getAppearanceCssStyle(customCssStyles, '.assistant-text', '.chat-assistant-text') || {}),
+    }),
+    [customCssStyles]
+  );
+  const userBubbleCssStyle = useMemo(
+    () => ({
+      ...(customCssStyles.userBubble || {}),
+      ...(getAppearanceCssStyle(customCssStyles, '.user-bubble', '.chat-user-bubble') || {}),
+    }),
+    [customCssStyles]
+  );
+  const assistantBubbleCssStyle = useMemo(
+    () => ({
+      ...(customCssStyles.assistantBubble || {}),
+      ...(getAppearanceCssStyle(customCssStyles, '.assistant-bubble', '.chat-assistant-bubble') || {}),
+    }),
+    [customCssStyles]
+  );
+  const userBubbleGlass = useMemo(() => getAppearanceGlassConfig(userBubbleCssStyle), [userBubbleCssStyle]);
+  const assistantBubbleGlass = useMemo(() => getAppearanceGlassConfig(assistantBubbleCssStyle), [assistantBubbleCssStyle]);
   const userBubbleColor = appearanceConfig?.userBubbleColor || colors.userBubble;
   const userBubbleTransparent = !!appearanceConfig?.userBubbleTransparent;
   const userBubbleRadius = numberOrDefault(appearanceConfig?.userBubbleRadius, 20, 0, 36);
@@ -562,13 +620,13 @@ export const ChatBubble = React.memo(function ChatBubble({
         fontSize: userFontSize,
         lineHeight: Math.round(userFontSize * 1.38),
       },
-      customCssStyles.userText,
+      customUserTextCssStyle,
     ],
-    [customCssStyles.userText, userFontSize, userTextColor]
+    [customUserTextCssStyle, userFontSize, userTextColor]
   );
   const userMarkdownStyles = useMemo(
-    () => createUserMarkdownStyles(colors, userFontSize, userTextColor, customCssStyles.userText),
-    [colors, customCssStyles.userText, userFontSize, userTextColor]
+    () => createUserMarkdownStyles(colors, userFontSize, userTextColor, customUserTextCssStyle),
+    [colors, customUserTextCssStyle, userFontSize, userTextColor]
   );
   markdownStyles = useMemo(
     () => createMarkdownStyles(
@@ -577,7 +635,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       assistantTextColor,
       assistantTextStrokeColor,
       assistantTextStrokeWidth,
-      customCssStyles.assistantText
+      customAssistantTextCssStyle
     ),
     [
       assistantFontSize,
@@ -585,7 +643,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       assistantTextStrokeColor,
       assistantTextStrokeWidth,
       colors,
-      customCssStyles.assistantText,
+      customAssistantTextCssStyle,
     ]
   );
   const assistantBubbleMarkdownStyles = useMemo(
@@ -595,7 +653,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       assistantTextColor,
       assistantTextStrokeColor,
       assistantTextStrokeWidth,
-      customCssStyles.assistantText,
+      customAssistantTextCssStyle,
       true
     ),
     [
@@ -604,7 +662,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       assistantTextStrokeColor,
       assistantTextStrokeWidth,
       colors,
-      customCssStyles.assistantText,
+      customAssistantTextCssStyle,
     ]
   );
 
@@ -614,6 +672,9 @@ export const ChatBubble = React.memo(function ChatBubble({
     [isUser, stickerConfig?.assistantStickers, stickerConfig?.userStickers]
   );
   const messageAvatarsVisible = !!appearanceConfig?.messageAvatarsVisible;
+  const messageAvatarLayout = appearanceConfig?.messageAvatarLayout === 'side' ? 'side' : 'header';
+  const sideAvatarsVisible = messageAvatarsVisible && messageAvatarLayout === 'side';
+  const headerAvatarsVisible = messageAvatarsVisible && messageAvatarLayout === 'header';
   const messageMetaVisible = appearanceConfig?.messageMetaVisible ?? true;
   const messageAvatarRadius = numberOrDefault(appearanceConfig?.messageAvatarRadius, 18, 0, 20);
   const userDisplayName = (appearanceConfig?.userDisplayName || 'You').trim() || 'You';
@@ -621,6 +682,42 @@ export const ChatBubble = React.memo(function ChatBubble({
   const avatarImageUri = isUser ? appearanceConfig?.userAvatarImageUri : appearanceConfig?.assistantAvatarImageUri;
   const avatarName = isUser ? userDisplayName : assistantDisplayName;
   const avatarFallback = isUser ? 'U' : 'AI';
+  const avatarHeaderCssStyle = cssStyle(
+    '.message-avatar-row',
+    '.chat-message-avatar-row',
+    isUser ? '.user-avatar-row' : '.assistant-avatar-row',
+    isUser ? '.chat-user-avatar-row' : '.chat-assistant-avatar-row'
+  );
+  const avatarImageCssStyle = imageCssStyle(
+    '.message-avatar',
+    '.message-avatar-image',
+    '.chat-message-avatar',
+    isUser ? '.user-avatar' : '.assistant-avatar',
+    isUser ? '.user-avatar-image' : '.assistant-avatar-image',
+    isUser ? '.chat-user-avatar' : '.chat-assistant-avatar'
+  );
+  const avatarFallbackCssStyle = cssStyle(
+    '.message-avatar',
+    '.message-avatar-fallback',
+    '.chat-message-avatar',
+    isUser ? '.user-avatar' : '.assistant-avatar',
+    isUser ? '.user-avatar-fallback' : '.assistant-avatar-fallback',
+    isUser ? '.chat-user-avatar' : '.chat-assistant-avatar'
+  );
+  const avatarFallbackTextCssStyle = cssStyle(
+    '.message-avatar-text',
+    '.message-avatar-fallback-text',
+    isUser ? '.user-avatar-text' : '.assistant-avatar-text',
+    isUser ? '.user-avatar-fallback-text' : '.assistant-avatar-fallback-text'
+  );
+  const avatarNameCssStyle = cssStyle(
+    '.message-avatar-name',
+    isUser ? '.user-avatar-name' : '.assistant-avatar-name'
+  );
+  const avatarMetaCssStyle = cssStyle(
+    '.message-avatar-meta',
+    isUser ? '.user-avatar-meta' : '.assistant-avatar-meta'
+  );
   const messageHasSticker = hasStickerToken(message.content, messageStickers);
   const messageIsStickerOnly = isStickerOnlyContent(message.content, messageStickers);
   const sharedLinkUrl = isUser ? getSingleHttpUrlMessage(message.content) : null;
@@ -664,6 +761,7 @@ export const ChatBubble = React.memo(function ChatBubble({
         style={[
           styles.messageAvatarImage,
           { borderRadius: messageAvatarRadius },
+          avatarImageCssStyle,
         ]}
         resizeMode="cover"
       />
@@ -672,25 +770,41 @@ export const ChatBubble = React.memo(function ChatBubble({
         style={[
           styles.messageAvatarFallback,
           { borderRadius: messageAvatarRadius },
+          avatarFallbackCssStyle,
         ]}
       >
-        <Text style={styles.messageAvatarFallbackText}>{avatarFallback}</Text>
+        <Text style={[styles.messageAvatarFallbackText, avatarFallbackTextCssStyle]}>{avatarFallback}</Text>
       </View>
     )
   ) : null;
-  const avatarHeader = messageAvatarsVisible ? (
+  const sideAvatarNode = sideAvatarsVisible ? (
+    <View
+      style={[
+        styles.messageSideAvatarSlot,
+        isUser ? styles.userSideAvatarSlot : styles.assistantSideAvatarSlot,
+        cssStyle(
+          '.message-avatar-side-slot',
+          isUser ? '.user-avatar-side-slot' : '.assistant-avatar-side-slot'
+        ),
+      ]}
+    >
+      {avatarNode}
+    </View>
+  ) : null;
+  const avatarHeader = headerAvatarsVisible && showAvatarHeader ? (
     <View
       style={[
         styles.messageAvatarHeader,
         isUser ? styles.messageAvatarHeaderUser : styles.messageAvatarHeaderAssistant,
+        avatarHeaderCssStyle,
       ]}
     >
       {!isUser && avatarNode}
-      {isUser && messageMetaVisible && <Text style={styles.messageAvatarMeta}>{avatarMetaText}</Text>}
-      <Text style={styles.messageAvatarName} numberOfLines={1}>
+      {isUser && messageMetaVisible && <Text style={[styles.messageAvatarMeta, avatarMetaCssStyle]}>{avatarMetaText}</Text>}
+      <Text style={[styles.messageAvatarName, avatarNameCssStyle]} numberOfLines={1}>
         {avatarName}
       </Text>
-      {!isUser && messageMetaVisible && <Text style={styles.messageAvatarMeta}>{avatarMetaText}</Text>}
+      {!isUser && messageMetaVisible && <Text style={[styles.messageAvatarMeta, avatarMetaCssStyle]}>{avatarMetaText}</Text>}
       {isUser && avatarNode}
     </View>
   ) : null;
@@ -848,24 +962,26 @@ export const ChatBubble = React.memo(function ChatBubble({
     const userBubbleBaseStyle = [
       styles.userBubble,
       {
-        backgroundColor: userBubbleTransparent ? 'transparent' : userBubbleColor,
+        backgroundColor: userBubbleGlass.enabled
+          ? 'rgba(255,255,255,0.28)'
+          : userBubbleTransparent ? 'transparent' : userBubbleColor,
         borderRadius: userBubbleRadius,
       },
       messageHasSticker && styles.userBubbleWithSticker,
-      customCssStyles.userBubble,
+      withoutAppearanceGlassProps(userBubbleCssStyle),
       messageIsStickerOnly && styles.userStickerOnlyBubble,
     ];
 
-    return (
-      <View style={[styles.userRow, isHidden && styles.hiddenRow]}>
-        <View
-          style={[
-            styles.userColumn,
-            { maxWidth: percentWidth(userBubbleWidthPercent) },
-            customCssStyles.userBubble?.maxWidth !== undefined && { maxWidth: customCssStyles.userBubble.maxWidth },
-            customCssStyles.userMessage,
-          ]}
-        >
+    const userColumnNode = (
+      <View
+        style={[
+          styles.userColumn,
+          { maxWidth: percentWidth(userBubbleWidthPercent) },
+          customCssStyles.userBubble?.maxWidth !== undefined && { maxWidth: customCssStyles.userBubble.maxWidth },
+          customCssStyles.userMessage,
+          cssStyle('.user-message', '.chat-user-message', '.chat-user-column'),
+        ]}
+      >
           {avatarHeader}
           {floorLabel && <Text style={styles.floorLabelRight}>{floorLabel}</Text>}
           {isHidden && <Text style={styles.hiddenLabelRight}>已隐藏</Text>}
@@ -877,7 +993,7 @@ export const ChatBubble = React.memo(function ChatBubble({
             >
               <Image
                 source={{ uri: message.imageUri }}
-                style={styles.userImage}
+                style={[styles.userImage, imageCssStyle('.user-image', '.chat-user-image')]}
                 resizeMode="cover"
               />
             </Pressable>
@@ -891,7 +1007,7 @@ export const ChatBubble = React.memo(function ChatBubble({
                     key={`${uri}-${index}`}
                     onPress={() => setPreviewImage({ uri, title: `生图参考图 ${index + 1}` })}
                   >
-                    <Image source={{ uri }} style={styles.referenceImageThumb} resizeMode="cover" />
+                    <Image source={{ uri }} style={[styles.referenceImageThumb, imageCssStyle('.reference-image', '.chat-reference-image')]} resizeMode="cover" />
                   </Pressable>
                 ))}
               </View>
@@ -904,6 +1020,14 @@ export const ChatBubble = React.memo(function ChatBubble({
               onLongPress={handleUserLongPress}
               style={userBubbleBaseStyle}
             >
+              {userBubbleGlass.enabled && (
+                <BlurView
+                  pointerEvents="none"
+                  intensity={userBubbleGlass.intensity}
+                  tint={userBubbleGlass.tint}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
               {dailyPaperCard ? (
                 <DailyPaperForwardCard paper={dailyPaperCard} />
               ) : sharedLinkUrl ? (
@@ -926,11 +1050,33 @@ export const ChatBubble = React.memo(function ChatBubble({
               onLongPress={handleUserLongPress}
               style={userBubbleBaseStyle}
             >
+              {userBubbleGlass.enabled && (
+                <BlurView
+                  pointerEvents="none"
+                  intensity={userBubbleGlass.intensity}
+                  tint={userBubbleGlass.tint}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
               <Text style={[styles.userText, userTextStyle]}>{message.content}</Text>
             </Pressable>
           )}
-        </View>
+      </View>
+    );
 
+    return (
+      <View style={[styles.userRow, cssStyle('.user-row', '.chat-user-row'), isHidden && styles.hiddenRow]}>
+        {sideAvatarsVisible ? (
+          <View
+            style={[
+              styles.userSideMessageRow,
+              cssStyle('.message-avatar-side-row', '.user-avatar-side-row'),
+            ]}
+          >
+            {userColumnNode}
+            {sideAvatarNode}
+          </View>
+        ) : userColumnNode}
         {/* 长按操作菜单 */}
         <Modal transparent visible={menuVisible} animationType="fade" onRequestClose={() => setMenuVisible(false)}>
           <Pressable style={styles.menuDismissOverlay} onPress={() => setMenuVisible(false)}>
@@ -1119,12 +1265,19 @@ export const ChatBubble = React.memo(function ChatBubble({
     styles.assistantBubble,
     {
       maxWidth: percentWidth(assistantBubbleWidthPercent),
-      backgroundColor: assistantBubbleTransparent ? 'transparent' : assistantBubbleColor,
+      backgroundColor: assistantBubbleGlass.enabled
+        ? 'rgba(255,255,255,0.24)'
+        : assistantBubbleTransparent ? 'transparent' : assistantBubbleColor,
       borderRadius: assistantBubbleRadius,
     },
-    customCssStyles.assistantBubble,
+    withoutAppearanceGlassProps(assistantBubbleCssStyle),
   ];
-  const assistantContentStyle = [styles.assistantContent, customCssStyles.assistantBubble];
+  const assistantContentStyle = [
+    styles.assistantContent,
+    sideAvatarsVisible && styles.assistantSideContent,
+    withoutAppearanceGlassProps(customCssStyles.assistantBubble),
+    cssStyle('.assistant-content', '.chat-assistant-content'),
+  ];
   const ASSISTANT_MENU_WIDTH = Math.min(340, SCREEN_WIDTH - 16);
   const assistantActionMenuWidth = remoteActivityCardVisible ? Math.min(260, SCREEN_WIDTH - 16) : ASSISTANT_MENU_WIDTH;
   const assistantMenuLeft = Math.min(
@@ -1132,26 +1285,61 @@ export const ChatBubble = React.memo(function ChatBubble({
     SCREEN_WIDTH - assistantActionMenuWidth - 8
   );
   const assistantMenuTop = Math.max(8, menuAnchor.y + menuAnchor.height + 8);
-  const getAssistantBubbleStyle = (content: string) => [
-    ...assistantBubbleBaseStyle,
-    hasStickerToken(content, messageStickers) && styles.userBubbleWithSticker,
-    isStickerOnlyContent(content, messageStickers) && styles.userStickerOnlyBubble,
-  ];
+  function getAssistantBubbleStyle(content: string) {
+    if (isStickerOnlyContent(content, messageStickers)) {
+      return [
+        styles.assistantBubble,
+        { maxWidth: percentWidth(assistantBubbleWidthPercent) },
+        styles.userStickerOnlyBubble,
+      ];
+    }
+
+    return [
+      ...assistantBubbleBaseStyle,
+      hasStickerToken(content, messageStickers) && styles.userBubbleWithSticker,
+    ];
+  }
+
+  function renderAssistantSideRow(key: string, node: React.ReactNode) {
+    if (!sideAvatarsVisible) return node;
+    return (
+      <View
+        key={key}
+        style={[
+          styles.assistantSideMessageRow,
+          cssStyle('.message-avatar-side-row', '.assistant-avatar-side-row'),
+        ]}
+      >
+        {sideAvatarNode}
+        {node}
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.assistantRow, customCssStyles.assistantMessage, isHidden && styles.hiddenBubble]}>
+    <View
+      style={[
+        styles.assistantRow,
+        customCssStyles.assistantMessage,
+        cssStyle('.assistant-message', '.assistant-row', '.chat-assistant-row'),
+        isHidden && styles.hiddenBubble,
+      ]}
+    >
       {avatarHeader}
       {floorLabel && <Text style={styles.floorLabelLeft}>{floorLabel}</Text>}
       {isHidden && <Text style={styles.hiddenLabelLeft}>已隐藏</Text>}
       {/* 思维链：<thinking> 包裹的内容拆出，正文只渲染剩余部分 */}
       {thinking.length > 0 && <ThinkingBlock thinking={thinking} />}
       {remoteActivityCardVisible ? (
-        <RemoteActivityCard
-          message={message}
-          assistantName={assistantDisplayName}
-          onPress={onBubblePress}
-          onLongPress={handleAssistantBubbleLongPress}
-        />
+        renderAssistantSideRow(
+          'remote-activity',
+          <RemoteActivityCard
+            message={message}
+            assistantName={assistantDisplayName}
+            onPress={onBubblePress}
+            onLongPress={handleAssistantBubbleLongPress}
+          />
+        )
       ) : assistantBubbleEnabled ? (
         <View style={styles.assistantBubbleStack}>
           {assistantBubbleFlowParts.length > 0 ? assistantBubbleFlowParts.map((part) => {
@@ -1160,13 +1348,22 @@ export const ChatBubble = React.memo(function ChatBubble({
             }
 
             const pictureCount = countPicTokens(part.content);
-            return (
+            const stickerOnlyPart = isStickerOnlyContent(part.content, messageStickers);
+            const bubbleNode = (
               <Pressable
-                key={part.key}
+                key={sideAvatarsVisible ? undefined : part.key}
                 style={getAssistantBubbleStyle(part.content)}
                 onPress={onBubblePress}
                 onLongPress={handleAssistantBubbleLongPress}
               >
+                {assistantBubbleGlass.enabled && !stickerOnlyPart && (
+                  <BlurView
+                    pointerEvents="none"
+                    intensity={assistantBubbleGlass.intensity}
+                    tint={assistantBubbleGlass.tint}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )}
                 <StickerContent
                   content={part.content}
                   variant="assistant"
@@ -1179,66 +1376,81 @@ export const ChatBubble = React.memo(function ChatBubble({
                 />
               </Pressable>
             );
+            return sideAvatarsVisible ? renderAssistantSideRow(part.key, bubbleNode) : bubbleNode;
           }) : (
-            <Pressable
-              style={getAssistantBubbleStyle(' ')}
-              onPress={onBubblePress}
-              onLongPress={handleAssistantBubbleLongPress}
-            >
-              <StickerContent
-                content=" "
-                variant="assistant"
-                markdownStyle={assistantBubbleMarkdownStyles}
-                markdownRules={markdownRules}
-                stickers={messageStickers}
-                generatedPics={message.generatedPics}
-                onPicturePress={handleGeneratedPicturePress}
-                onPictureLongPress={handleGeneratedPictureLongPress}
-              />
-            </Pressable>
+            renderAssistantSideRow(
+              'assistant-empty',
+              <Pressable
+                style={getAssistantBubbleStyle(' ')}
+                onPress={onBubblePress}
+                onLongPress={handleAssistantBubbleLongPress}
+              >
+                {assistantBubbleGlass.enabled && (
+                  <BlurView
+                    pointerEvents="none"
+                    intensity={assistantBubbleGlass.intensity}
+                    tint={assistantBubbleGlass.tint}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )}
+                <StickerContent
+                  content=" "
+                  variant="assistant"
+                  markdownStyle={assistantBubbleMarkdownStyles}
+                  markdownRules={markdownRules}
+                  stickers={messageStickers}
+                  generatedPics={message.generatedPics}
+                  onPicturePress={handleGeneratedPicturePress}
+                  onPictureLongPress={handleGeneratedPictureLongPress}
+                />
+              </Pressable>
+            )
           )}
         </View>
       ) : (
-        <Pressable
-          ref={bubbleRef}
-          style={assistantContentStyle}
-          onPress={onBubblePress}
-          onLongPress={handleAssistantLongPress}
-        >
-          <View style={styles.assistantFlow}>
-            {assistantFlowParts.length > 0 ? assistantFlowParts.map((part) => {
-              if (part.type === 'tool') {
-                return renderToolInvocation(part.invocation, part.invocationIndex);
-              }
+        renderAssistantSideRow(
+          'assistant-content',
+          <Pressable
+            ref={bubbleRef}
+            style={assistantContentStyle}
+            onPress={onBubblePress}
+            onLongPress={handleAssistantLongPress}
+          >
+            <View style={styles.assistantFlow}>
+              {assistantFlowParts.length > 0 ? assistantFlowParts.map((part) => {
+                if (part.type === 'tool') {
+                  return renderToolInvocation(part.invocation, part.invocationIndex);
+                }
 
-              const pictureCount = countPicTokens(part.content);
-              return (
+                const pictureCount = countPicTokens(part.content);
+                return (
+                  <StickerContent
+                    key={part.key}
+                    content={part.content}
+                    variant="assistant"
+                    markdownStyle={markdownStyles}
+                    markdownRules={markdownRules}
+                    stickers={messageStickers}
+                    generatedPics={normalizeGeneratedPicsForSegment(message.generatedPics, part.pictureOffset, pictureCount)}
+                    onPicturePress={handleGeneratedPicturePress}
+                    onPictureLongPress={handleGeneratedPictureLongPress}
+                  />
+                );
+              }) : (
                 <StickerContent
-                  key={part.key}
-                  content={part.content}
+                  content=" "
                   variant="assistant"
                   markdownStyle={markdownStyles}
                   markdownRules={markdownRules}
                   stickers={messageStickers}
-                  generatedPics={normalizeGeneratedPicsForSegment(message.generatedPics, part.pictureOffset, pictureCount)}
+                  generatedPics={message.generatedPics}
                   onPicturePress={handleGeneratedPicturePress}
                   onPictureLongPress={handleGeneratedPictureLongPress}
                 />
-              );
-            }) : (
-              <StickerContent
-                content=" "
-                variant="assistant"
-                markdownStyle={markdownStyles}
-                markdownRules={markdownRules}
-                stickers={messageStickers}
-                generatedPics={message.generatedPics}
-                onPicturePress={handleGeneratedPicturePress}
-                onPictureLongPress={handleGeneratedPictureLongPress}
-              />
-            )}
-          </View>
-        </Pressable>
+              )}
+            </View>
+          </Pressable>
+        )
       )}
       <Modal
         transparent
@@ -1432,6 +1644,31 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: 15,
     color: colors.textTertiary,
     fontFamily: fonts.mono,
+  },
+  messageSideAvatarSlot: {
+    flexShrink: 0,
+    alignItems: 'center',
+  },
+  userSideAvatarSlot: {
+    marginTop: 2,
+  },
+  assistantSideAvatarSlot: {
+    marginTop: 2,
+  },
+  userSideMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    gap: 8,
+    maxWidth: '100%',
+    alignSelf: 'flex-end',
+  },
+  assistantSideMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    maxWidth: '100%',
+    alignSelf: 'flex-start',
   },
   // 已隐藏楼层：整体降低透明度作区分
   hiddenRow: {
@@ -1799,9 +2036,14 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     width: '100%',
     maxWidth: '100%',
   },
+  assistantSideContent: {
+    flex: 1,
+    minWidth: 0,
+  },
   assistantBubble: {
     alignSelf: 'flex-start',
     maxWidth: '75%',
+    flexShrink: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
     overflow: 'hidden',
@@ -1815,6 +2057,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignSelf: 'flex-start',
     width: '88%',
     maxWidth: 360,
+    flexShrink: 1,
     borderRadius: 8,
     padding: 14,
     gap: 8,
@@ -2054,6 +2297,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
 const createThinkingMarkdownStyles = (colors: ThemeColors) => StyleSheet.create({
   body: { width: '100%', fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
+  ...createMarkdownListStyles(colors.textSecondary, 14, 21, true),
   code_inline: {
     backgroundColor: colors.surface, color: colors.primary,
     paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, fontSize: 13, fontFamily: 'monospace',
@@ -2073,6 +2317,76 @@ const createThinkingMarkdownStyles = (colors: ThemeColors) => StyleSheet.create(
   td: { width: 112, minWidth: 112, flexShrink: 0, paddingVertical: 7, paddingHorizontal: 9 },
 });
 
+function createMarkdownListStyles(
+  textColor: string,
+  fontSize: number,
+  lineHeight: number,
+  compact = false
+) {
+  const verticalMargin = compact ? 1 : 3;
+  const listContainerStyle = {
+    width: '100%' as const,
+    maxWidth: '100%' as const,
+    marginVertical: compact ? 0 : 2,
+    paddingLeft: 0,
+  };
+  const listItemStyle = {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    justifyContent: 'flex-start' as const,
+    width: '100%' as const,
+    maxWidth: '100%' as const,
+    minWidth: 0,
+    flexShrink: 1,
+    marginVertical: verticalMargin,
+    color: textColor,
+    fontSize,
+    lineHeight,
+  };
+  const bulletIconStyle = {
+    width: 18,
+    minWidth: 18,
+    flexShrink: 0,
+    marginLeft: 0,
+    marginRight: 6,
+    color: textColor,
+    fontSize,
+    lineHeight,
+    textAlign: 'center' as const,
+  };
+  const orderedIconStyle = {
+    minWidth: 24,
+    flexShrink: 0,
+    marginLeft: 0,
+    marginRight: 6,
+    color: textColor,
+    fontSize,
+    lineHeight,
+    textAlign: 'right' as const,
+  };
+  const contentStyle = {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '100%' as const,
+    flexShrink: 1,
+  };
+
+  return {
+    bullet_list: listContainerStyle,
+    ordered_list: listContainerStyle,
+    list_item: listItemStyle,
+    bullet_list_icon: bulletIconStyle,
+    ordered_list_icon: orderedIconStyle,
+    bullet_list_content: contentStyle,
+    ordered_list_content: contentStyle,
+    _VIEW_SAFE_bullet_list: listContainerStyle,
+    _VIEW_SAFE_ordered_list: listContainerStyle,
+    _VIEW_SAFE_list_item: listItemStyle,
+    _VIEW_SAFE_bullet_list_content: contentStyle,
+    _VIEW_SAFE_ordered_list_content: contentStyle,
+  };
+}
+
 const createUserMarkdownStyles = (
   colors: ThemeColors,
   fontSize = 16,
@@ -2083,6 +2397,9 @@ const createUserMarkdownStyles = (
 
   return StyleSheet.create({
   body: {
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
     fontSize,
     color: textColor,
     lineHeight: Math.round(fontSize * 1.38),
@@ -2111,15 +2428,7 @@ const createUserMarkdownStyles = (
     fontSize: Math.max(12, fontSize - 1),
     fontFamily: 'monospace',
   },
-  bullet_list: {
-    marginVertical: 0,
-  },
-  ordered_list: {
-    marginVertical: 0,
-  },
-  list_item: {
-    marginVertical: 1,
-  },
+  ...createMarkdownListStyles(textColor, fontSize, Math.round(fontSize * 1.38), true),
   link: {
     color: colors.primary,
   },
@@ -2143,13 +2452,15 @@ const createMarkdownStyles = (
         textShadowOffset: { width: 0, height: 0 },
       }
     : {};
+  const lineHeight = Math.round(fontSize * (compactBubble ? 1.38 : 1.5));
+  const listStyles = createMarkdownListStyles(textColor, fontSize, lineHeight, compactBubble);
 
   return StyleSheet.create({
   body: {
     width: '100%',
     fontSize,
     color: textColor,
-    lineHeight: Math.round(fontSize * (compactBubble ? 1.38 : 1.5)),
+    lineHeight,
     fontFamily: fonts.serifBold,
     fontWeight: 'normal',
     ...strokeStyle,
@@ -2169,9 +2480,19 @@ const createMarkdownStyles = (
   blockquote: {
     borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 12, marginVertical: 8, opacity: 0.8,
   },
-  bullet_list: compactBubble ? { marginVertical: 0 } : {},
-  ordered_list: compactBubble ? { marginVertical: 0 } : {},
-  list_item: { marginVertical: compactBubble ? 1 : 2, ...strokeStyle },
+  ...listStyles,
+  list_item: {
+    ...listStyles.list_item,
+    ...strokeStyle,
+  },
+  bullet_list_icon: {
+    ...listStyles.bullet_list_icon,
+    ...strokeStyle,
+  },
+  ordered_list_icon: {
+    ...listStyles.ordered_list_icon,
+    ...strokeStyle,
+  },
   link: { color: colors.primary },
   markdownTableViewport: { alignSelf: 'stretch', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', marginVertical: 10, paddingVertical: 4 },
   markdownTableScroll: { alignSelf: 'stretch', width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 44, flexShrink: 1 },

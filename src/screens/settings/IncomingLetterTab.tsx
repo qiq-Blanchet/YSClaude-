@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { useSettingsStore } from '../../stores/settings';
 import type { IncomingLetterOccasion } from '../../types';
 import { formatDateOnly } from '../../utils/time';
@@ -25,7 +25,7 @@ function validateIncomingLetterDate(value: string): boolean {
 }
 
 export function IncomingLetterTab({ showToast, keyboardBottomInset }: IncomingLetterTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const {
     incomingLetterConfig,
@@ -153,7 +153,7 @@ export function IncomingLetterTab({ showToast, keyboardBottomInset }: IncomingLe
             setIncomingLetterConfig({ enabled: value });
             showToast(value ? '来信已开启' : '来信已关闭');
           }}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -189,7 +189,7 @@ export function IncomingLetterTab({ showToast, keyboardBottomInset }: IncomingLe
               <Switch
                 value={occasion.enabled}
                 onValueChange={(enabled) => updateIncomingLetterOccasion(occasion.id, { enabled })}
-                trackColor={{ false: colors.border, true: colors.primary }}
+                trackColor={{ false: colors.inputBorder, true: colors.primary }}
                 thumbColor="#FFFFFF"
               />
               <Pressable
@@ -246,7 +246,7 @@ export function IncomingLetterTab({ showToast, keyboardBottomInset }: IncomingLe
                 <Switch
                   value={draftRepeatYearly}
                   onValueChange={setDraftRepeatYearly}
-                  trackColor={{ false: colors.border, true: colors.primary }}
+                  trackColor={{ false: colors.inputBorder, true: colors.primary }}
                   thumbColor="#FFFFFF"
                 />
               </View>
@@ -255,7 +255,7 @@ export function IncomingLetterTab({ showToast, keyboardBottomInset }: IncomingLe
                 <Switch
                   value={draftEnabled}
                   onValueChange={setDraftEnabled}
-                  trackColor={{ false: colors.border, true: colors.primary }}
+                  trackColor={{ false: colors.inputBorder, true: colors.primary }}
                   thumbColor="#FFFFFF"
                 />
               </View>

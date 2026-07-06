@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { copyAsync } from 'expo-file-system/legacy';
 import { randomUUID } from 'expo-crypto';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { useSettingsStore } from '../../stores/settings';
 import {
   canDrawFloatingBall,
@@ -85,7 +85,7 @@ function mergeUniqueUris(existing: string[], next: string[], limit?: number): st
 }
 
 export function FloatingBallTab({ showToast, keyboardBottomInset }: FloatingBallTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const { floatingBallConfig, setFloatingBallConfig, ttsConfig } = useSettingsStore();
   const [busy, setBusy] = useState(false);
@@ -227,7 +227,7 @@ export function FloatingBallTab({ showToast, keyboardBottomInset }: FloatingBall
           value={floatingBallConfig.enabled}
           onValueChange={handleToggle}
           disabled={busy}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -311,7 +311,7 @@ export function FloatingBallTab({ showToast, keyboardBottomInset }: FloatingBall
             setFloatingBallConfig({ assetAutoSwitchEnabled: value });
             showToast(value ? '素材自动切换已开启' : '素材自动切换已关闭');
           }}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -336,7 +336,7 @@ export function FloatingBallTab({ showToast, keyboardBottomInset }: FloatingBall
         <Switch
           value={!!floatingBallConfig.ttsEnabled}
           onValueChange={handleTTSToggle}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -352,7 +352,7 @@ export function FloatingBallTab({ showToast, keyboardBottomInset }: FloatingBall
             setFloatingBallConfig({ autoReplyOnScreenshotShare: value });
             showToast(value ? '截图自动回复已开启' : '截图自动回复已关闭');
           }}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>

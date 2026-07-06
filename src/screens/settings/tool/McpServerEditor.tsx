@@ -1,4 +1,4 @@
-import { Pressable, Switch, Text, TextInput, View } from 'react-native';
+﻿import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 type McpServerEditorProps = {
   styles: any;
@@ -54,7 +54,7 @@ handleSyncMcpServer,
         <Switch
           value={selectedMcpServer.enabled}
           onValueChange={(value) => handleUpdateMcpServer(selectedMcpServer.id, { enabled: value })}
-          trackColor={{ true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
         />
       </View>
       <View style={styles.field}>
@@ -98,7 +98,7 @@ handleSyncMcpServer,
         <Switch
           value={mcpResourceToolsEnabled}
           onValueChange={setMcpResourceToolsEnabled}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -126,7 +126,7 @@ handleSyncMcpServer,
                 onValueChange={(value) =>
                   handleUpdateMcpServerToolEnabled(selectedMcpServer.id, tool.name, value)
                 }
-                trackColor={{ false: colors.border, true: colors.primary }}
+                trackColor={{ false: colors.inputBorder, true: colors.primary }}
                 thumbColor="#FFFFFF"
               />
             </View>
@@ -161,7 +161,7 @@ handleSyncMcpServer,
                     onValueChange={(value) =>
                       handleUpdateMcpServerResource(selectedMcpServer.id, resource.uri, { enabled: value })
                     }
-                    trackColor={{ false: colors.border, true: colors.primary }}
+                    trackColor={{ false: colors.inputBorder, true: colors.primary }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
@@ -172,7 +172,7 @@ handleSyncMcpServer,
                     onValueChange={(value) =>
                       handleUpdateMcpServerResource(selectedMcpServer.id, resource.uri, { pinned: value })
                     }
-                    trackColor={{ false: colors.border, true: colors.primary }}
+                    trackColor={{ false: colors.inputBorder, true: colors.primary }}
                     thumbColor="#FFFFFF"
                   />
                 </View>

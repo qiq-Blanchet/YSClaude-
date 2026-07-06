@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { type TTSConfig, useSettingsStore } from '../../stores/settings';
 import { playTTS } from '../../services/tts';
 import { createSettingsStyles } from './styles';
@@ -13,7 +13,7 @@ type TTSConfigTabProps = {
 const TTS_MODELS = ['speech-02-hd', 'speech-02-turbo', 'speech-2.8-hd'];
 
 export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const { ttsConfig, setTTSConfig } = useSettingsStore();
   const [groupId, setGroupId] = useState(ttsConfig.groupId);

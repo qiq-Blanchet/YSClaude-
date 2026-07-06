@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { TextInput } from 'react-native';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import { createSettingsStyles } from './styles';
 
 type ClampedNumberInputProps = {
@@ -28,7 +28,7 @@ export function ClampedNumberInput({
   onCommit,
   keyboardType = 'number-pad',
 }: ClampedNumberInputProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const [text, setText] = useState(String(value));
   const [focused, setFocused] = useState(false);

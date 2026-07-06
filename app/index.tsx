@@ -17,6 +17,7 @@ import {
   type LayoutChangeEvent,
   type ListRenderItem,
   type AppStateStatus,
+  type ImageStyle,
 } from 'react-native';
 import Animated, {
   Easing,
@@ -33,6 +34,7 @@ import { lightColors, useThemeColors, type ThemeColors } from '../src/theme/colo
 
 import { fonts } from '../src/theme/fonts';
 import { TopBarIcon } from '../src/components/TopBarIcon';
+import type { TopBarIconKey } from '../src/utils/topBarIconTypes';
 import { useChatStore } from '../src/stores/chat';
 import { usePeriodStore } from '../src/stores/period';
 import { useSettingsStore } from '../src/stores/settings';
@@ -43,6 +45,7 @@ import { TimeDivider } from '../src/components/TimeDivider';
 import { IncomingLetter, Message } from '../src/types';
 import { formatFullTime, TIME_GAP_THRESHOLD_MS } from '../src/utils/time';
 import { pickGreeting } from '../src/utils/greetings';
+import { getAppearanceCssStyle, parseAppearanceCss } from '../src/utils/appearanceCss';
 import {
   buildPeriodDateSet,
   calculatePeriodPrediction,
@@ -70,6 +73,8 @@ let colors = lightColors;
 const INPUT_BAR_FALLBACK_HEIGHT = 128;
 const MESSAGE_BOTTOM_GAP = 16;
 const MESSAGE_TOP_GAP = 104;
+const LOAD_MORE_EDGE_THRESHOLD = 96;
+const PROGRAMMATIC_JUMP_SUPPRESS_MS = 1200;
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 const CLAWD_STATUS_AUTO_CLOSE_MS = 5200;
 
@@ -155,13 +160,31 @@ function buildCalendarCells(month: Date): Array<Date | null> {
   return cells;
 }
 
-function withAlpha(hex: string, alpha: number): string {
-  const normalized = hex.replace('#', '');
-  if (normalized.length !== 6) return hex;
-  const red = parseInt(normalized.slice(0, 2), 16);
-  const green = parseInt(normalized.slice(2, 4), 16);
-  const blue = parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+function withAlpha(color: string, alpha: number): string {
+  const boundedAlpha = Math.min(1, Math.max(0, alpha));
+  const normalized = color.trim();
+  const hex = normalized.replace('#', '');
+
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    const red = parseInt(hex[0] + hex[0], 16);
+    const green = parseInt(hex[1] + hex[1], 16);
+    const blue = parseInt(hex[2] + hex[2], 16);
+    return `rgba(${red}, ${green}, ${blue}, ${boundedAlpha})`;
+  }
+
+  if (/^[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(hex)) {
+    const red = parseInt(hex.slice(0, 2), 16);
+    const green = parseInt(hex.slice(2, 4), 16);
+    const blue = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${red}, ${green}, ${blue}, ${boundedAlpha})`;
+  }
+
+  const rgbMatch = normalized.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i);
+  if (rgbMatch) {
+    return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${boundedAlpha})`;
+  }
+
+  return boundedAlpha === 0 ? 'rgba(0, 0, 0, 0)' : normalized;
 }
 
 function formatRemoteSnapshotState(status: PromptCacheRemoteSnapshotStatus): string {
@@ -219,6 +242,18 @@ export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const appearanceConfig = useSettingsStore((state) => state.appearanceConfig);
+  const customCssStyles = useMemo(
+    () => parseAppearanceCss(appearanceConfig?.customCss),
+    [appearanceConfig?.customCss]
+  );
+  const cssStyle = useCallback(
+    (...selectors: string[]) => getAppearanceCssStyle(customCssStyles, ...selectors),
+    [customCssStyles]
+  );
+  const imageCssStyle = useCallback(
+    (...selectors: string[]) => cssStyle(...selectors) as ImageStyle | undefined,
+    [cssStyle]
+  );
   const hotboardConfig = useSettingsStore((state) => state.hotboardConfig);
   const settingsHydrated = useSettingsStore((state) => state._hydrated);
   const incomingLetterEnabled = useSettingsStore((state) => !!state.incomingLetterConfig?.enabled);
@@ -227,6 +262,18 @@ export default function ChatScreen() {
   const topBarFadeHidden = !!appearanceConfig?.topBarFadeHidden;
   const topBarBackgroundImageUri = appearanceConfig?.topBarBackgroundImageUri;
   const chatBackgroundImageUri = appearanceConfig?.chatBackgroundImageUri;
+  const topBarCssStyle = cssStyle('.top-bar', '.chat-top-bar');
+  const topBarBackgroundCssStyle = imageCssStyle('.top-bar-background', '.chat-top-bar-background');
+  const topBarFadeCssStyle = cssStyle('.top-bar-fade', '.chat-top-bar-fade');
+  const topBarFadeColor = typeof topBarFadeCssStyle?.backgroundColor === 'string'
+    ? topBarFadeCssStyle.backgroundColor
+    : colors.background;
+  const { backgroundColor: _topBarFadeBackgroundColor, ...topBarFadeViewCssStyle } = topBarFadeCssStyle || {};
+  const topBarLeftCssStyle = cssStyle('.top-bar-left', '.top-bar-left-group');
+  const topBarRightCssStyle = cssStyle('.top-bar-right', '.top-bar-right-group');
+  const topBarCenterCssStyle = cssStyle('.top-bar-center', '.top-bar-center-slot');
+  const topBarCenterButtonCssStyle = cssStyle('.top-bar-center-button', '.top-bar-clawd-button');
+  const clawdIconCssStyle = imageCssStyle('.top-bar-icon', '.top-bar-clawd-icon');
   const {
     conversationId,
     messages,
@@ -278,6 +325,60 @@ export default function ChatScreen() {
   const [clawdStatusVisible, setClawdStatusVisible] = useState(false);
   const [remoteSnapshotStatus, setRemoteSnapshotStatus] = useState(() => getPromptCacheRemoteSnapshotStatus());
   const [refreshingRemoteServerStatus, setRefreshingRemoteServerStatus] = useState(false);
+
+  function resolveTopBarIconStyle(iconKey: TopBarIconKey | 'clawd') {
+    const rawStyle = cssStyle('.top-bar-icon', `.top-bar-${iconKey}-icon`);
+    if (!rawStyle) {
+      return {
+        wrapperStyle: undefined,
+        color: colors.text,
+        size: undefined,
+      };
+    }
+
+    const {
+      color,
+      fontSize,
+      fontStyle,
+      fontWeight,
+      letterSpacing,
+      lineHeight,
+      textAlign,
+      textDecorationLine,
+      textShadowColor,
+      textTransform,
+      ...wrapperStyle
+    } = rawStyle;
+    const size = typeof rawStyle.width === 'number'
+      ? rawStyle.width
+      : typeof rawStyle.height === 'number'
+        ? rawStyle.height
+        : undefined;
+
+    return {
+      wrapperStyle,
+      color: typeof color === 'string' ? color : colors.text,
+      size,
+    };
+  }
+
+  function renderTopBarIcon(iconKey: TopBarIconKey) {
+    const iconStyle = resolveTopBarIconStyle(iconKey);
+    return (
+      <View pointerEvents="none" style={[styles.topBarIconSlot, iconStyle.wrapperStyle]}>
+        <TopBarIcon
+          iconKey={iconKey}
+          color={iconStyle.color}
+          customUri={topBarIconUris[iconKey]}
+          size={iconStyle.size ?? 22}
+        />
+      </View>
+    );
+  }
+
+  function topBarButtonStyle(iconKey: TopBarIconKey) {
+    return cssStyle('.top-bar-button', `.top-bar-${iconKey}-button`);
+  }
   const [flushingRemoteSnapshot, setFlushingRemoteSnapshot] = useState(false);
   const showRemoteInboxLoading = !!conversationId
     && isRemoteInboxSyncing
@@ -287,6 +388,9 @@ export default function ChatScreen() {
   const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollFollowUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialPositioningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollFollowUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clawdStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newerMessagesAutoScrollResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -295,6 +399,8 @@ export default function ChatScreen() {
   const contentHeightRef = useRef(0);
   const shouldStickToBottomRef = useRef(true);
   const suppressNextContentAutoScrollRef = useRef(false);
+  const suppressEndReachedUntilRef = useRef(0);
+  const olderMessagesAutoLoadRef = useRef(false);
   const messageIdsRef = useRef<string[]>([]);
   const conversationIdRef = useRef<string | null>(null);
   const pendingScrollMessageIdRef = useRef<string | null>(null);
@@ -487,6 +593,15 @@ export default function ChatScreen() {
       }
       if (initialPositioningTimerRef.current !== null) {
         clearTimeout(initialPositioningTimerRef.current);
+      }
+      if (pendingScrollStartTimerRef.current !== null) {
+        clearTimeout(pendingScrollStartTimerRef.current);
+      }
+      if (pendingScrollFollowUpTimerRef.current !== null) {
+        clearTimeout(pendingScrollFollowUpTimerRef.current);
+      }
+      if (pendingScrollSettleTimerRef.current !== null) {
+        clearTimeout(pendingScrollSettleTimerRef.current);
       }
       if (toastTimerRef.current !== null) {
         clearTimeout(toastTimerRef.current);
@@ -802,16 +917,62 @@ export default function ChatScreen() {
     const index = messages.findIndex((message) => message.id === pendingScrollMessageId);
     if (index < 0) return;
 
-    const timer = setTimeout(() => {
+    if (pendingScrollStartTimerRef.current !== null) {
+      clearTimeout(pendingScrollStartTimerRef.current);
+    }
+    if (pendingScrollFollowUpTimerRef.current !== null) {
+      clearTimeout(pendingScrollFollowUpTimerRef.current);
+    }
+    if (pendingScrollSettleTimerRef.current !== null) {
+      clearTimeout(pendingScrollSettleTimerRef.current);
+    }
+
+    shouldStickToBottomRef.current = false;
+    suppressNextContentAutoScrollRef.current = true;
+    suppressEndReachedUntilRef.current = Date.now() + PROGRAMMATIC_JUMP_SUPPRESS_MS;
+
+    const scrollToPendingMessage = (animated: boolean) => {
       flatListRef.current?.scrollToIndex({
         index,
-        animated: true,
+        animated,
         viewPosition: 0.5,
       });
-      clearPendingScrollMessage();
+    };
+
+    pendingScrollStartTimerRef.current = setTimeout(() => {
+      pendingScrollStartTimerRef.current = null;
+      scrollToPendingMessage(true);
+
+      pendingScrollFollowUpTimerRef.current = setTimeout(() => {
+        pendingScrollFollowUpTimerRef.current = null;
+        if (pendingScrollMessageIdRef.current === pendingScrollMessageId) {
+          scrollToPendingMessage(false);
+        }
+      }, 180);
+
+      pendingScrollSettleTimerRef.current = setTimeout(() => {
+        pendingScrollSettleTimerRef.current = null;
+        if (pendingScrollMessageIdRef.current === pendingScrollMessageId) {
+          clearPendingScrollMessage();
+        }
+        suppressNextContentAutoScrollRef.current = false;
+      }, 520);
     }, 80);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (pendingScrollStartTimerRef.current !== null) {
+        clearTimeout(pendingScrollStartTimerRef.current);
+        pendingScrollStartTimerRef.current = null;
+      }
+      if (pendingScrollFollowUpTimerRef.current !== null) {
+        clearTimeout(pendingScrollFollowUpTimerRef.current);
+        pendingScrollFollowUpTimerRef.current = null;
+      }
+      if (pendingScrollSettleTimerRef.current !== null) {
+        clearTimeout(pendingScrollSettleTimerRef.current);
+        pendingScrollSettleTimerRef.current = null;
+      }
+    };
   }, [clearPendingScrollMessage, messages, pendingScrollMessageId]);
 
   useFocusEffect(
@@ -891,10 +1052,24 @@ export default function ChatScreen() {
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (isInitialPositioningRef.current) return;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceToTop = contentOffset.y;
     const distanceToBottom =
       contentSize.height - (contentOffset.y + layoutMeasurement.height);
     shouldStickToBottomRef.current = distanceToBottom <= 80;
-  }, []);
+
+    if (
+      distanceToTop <= LOAD_MORE_EDGE_THRESHOLD &&
+      !pendingScrollMessageIdRef.current &&
+      hasOlderMessages &&
+      !isLoadingOlderMessages &&
+      !olderMessagesAutoLoadRef.current
+    ) {
+      olderMessagesAutoLoadRef.current = true;
+      void loadOlderMessages().finally(() => {
+        olderMessagesAutoLoadRef.current = false;
+      });
+    }
+  }, [hasOlderMessages, isLoadingOlderMessages, loadOlderMessages]);
 
   const messageContentStyle = useMemo(
     () => [
@@ -955,9 +1130,14 @@ export default function ChatScreen() {
   const renderMessageItem = useCallback<ListRenderItem<Message>>(
     ({ item, index }) => {
       const prev = index > 0 ? messages[index - 1] : null;
+      const isSeparatedByTime =
+        !prev || item.createdAt - prev.createdAt >= TIME_GAP_THRESHOLD_MS;
       const showDivider =
-        (!prev || item.createdAt - prev.createdAt >= TIME_GAP_THRESHOLD_MS) &&
+        isSeparatedByTime &&
         !dismissedDividers.has(item.id);
+      const showAvatarHeader =
+        (item.role === 'user' || item.role === 'assistant') &&
+        (prev?.role !== item.role || isSeparatedByTime);
       const floor = floorMap.get(item.id);
       const isHidden =
         hiddenMessageIdSet.has(item.id) ||
@@ -980,6 +1160,7 @@ export default function ChatScreen() {
               isHidden={isHidden}
               floorNumber={floor}
               showFloorNumber={visibleFloorMessageId === item.id && floor !== undefined}
+              showAvatarHeader={showAvatarHeader}
               onBubblePress={
                 floor !== undefined ? () => handleBubblePress(item.id) : undefined
               }
@@ -1020,6 +1201,12 @@ export default function ChatScreen() {
 
   const handleLoadNewerMessages = useCallback(async () => {
     if (!hasNewerMessages || isLoadingNewerMessages) return;
+    if (
+      pendingScrollMessageIdRef.current ||
+      Date.now() < suppressEndReachedUntilRef.current
+    ) {
+      return;
+    }
 
     suppressNextContentAutoScrollRef.current = true;
     if (newerMessagesAutoScrollResetTimerRef.current !== null) {
@@ -1094,11 +1281,18 @@ export default function ChatScreen() {
       onEndReachedThreshold={0.2}
       removeClippedSubviews={false}
       maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-      onScrollToIndexFailed={({ index }) => {
+      onScrollToIndexFailed={({ index, averageItemLength }) => {
+        if (!pendingScrollMessageIdRef.current) return;
+        suppressEndReachedUntilRef.current = Date.now() + PROGRAMMATIC_JUMP_SUPPRESS_MS;
+        flatListRef.current?.scrollToOffset({
+          offset: Math.max(0, averageItemLength * index),
+          animated: false,
+        });
         setTimeout(() => {
+          if (!pendingScrollMessageIdRef.current) return;
           flatListRef.current?.scrollToIndex({
             index,
-            animated: true,
+            animated: false,
             viewPosition: 0.5,
           });
         }, 120);
@@ -1142,11 +1336,11 @@ export default function ChatScreen() {
           </>
         )}
       </View>
-      <View style={styles.header}>
+      <View style={[styles.header, topBarCssStyle]}>
         {topBarBackgroundImageUri && (
           <Image
             source={{ uri: topBarBackgroundImageUri }}
-            style={styles.headerBackgroundImage}
+            style={[styles.headerBackgroundImage, topBarBackgroundCssStyle]}
             resizeMode="cover"
           />
         )}
@@ -1154,46 +1348,46 @@ export default function ChatScreen() {
           <LinearGradient
             pointerEvents="none"
             colors={[
-              colors.background,
-              withAlpha(colors.background, 0.92),
-              withAlpha(colors.background, 0),
+              topBarFadeColor,
+              withAlpha(topBarFadeColor, 0.92),
+              withAlpha(topBarFadeColor, 0),
             ]}
             locations={[0, 0.68, 1]}
-            style={styles.headerFade}
+            style={[styles.headerFade, topBarFadeViewCssStyle]}
           />
         )}
-        <View style={styles.headerLeftGroup}>
-          <Pressable style={styles.headerButton} onPress={() => router.push('/history')}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="history" color={colors.text} customUri={topBarIconUris.history} />}
+        <View style={[styles.headerLeftGroup, topBarLeftCssStyle]}>
+          <Pressable style={[styles.headerButton, topBarButtonStyle('history')]} onPress={() => router.push('/history')}>
+            {!topBarIconsHidden && renderTopBarIcon('history')}
           </Pressable>
-          <Pressable style={styles.headerButton} onPress={() => router.push('/reading')}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="reading" color={colors.text} customUri={topBarIconUris.reading} />}
+          <Pressable style={[styles.headerButton, topBarButtonStyle('reading')]} onPress={() => router.push('/reading')}>
+            {!topBarIconsHidden && renderTopBarIcon('reading')}
           </Pressable>
-          <Pressable style={styles.headerButton} onPress={showWebViewPanel}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="web" color={colors.text} customUri={topBarIconUris.web} />}
+          <Pressable style={[styles.headerButton, topBarButtonStyle('web')]} onPress={showWebViewPanel}>
+            {!topBarIconsHidden && renderTopBarIcon('web')}
           </Pressable>
-          <Pressable style={styles.headerButton} onPress={() => router.push('/game')}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="game" color={colors.text} customUri={topBarIconUris.game} />}
-          </Pressable>
-        </View>
-        <View style={styles.headerRightGroup}>
-          <Pressable style={styles.headerButton} onPress={() => router.push('/focus')}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="focus" color={colors.text} customUri={topBarIconUris.focus} />}
-          </Pressable>
-          <Pressable style={styles.headerButton} onPress={openCalendar}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="calendar" color={colors.text} customUri={topBarIconUris.calendar} />}
-          </Pressable>
-          <Pressable style={styles.headerButton} onPress={() => router.push('/music')}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="music" color={colors.text} customUri={topBarIconUris.music} />}
-          </Pressable>
-          <Pressable style={styles.headerButton} onPress={() => router.push('/settings')}>
-            {!topBarIconsHidden && <TopBarIcon iconKey="settings" color={colors.text} customUri={topBarIconUris.settings} />}
+          <Pressable style={[styles.headerButton, topBarButtonStyle('game')]} onPress={() => router.push('/game')}>
+            {!topBarIconsHidden && renderTopBarIcon('game')}
           </Pressable>
         </View>
-        <View pointerEvents="box-none" style={styles.headerCenterSlot}>
-          <Pressable style={styles.headerCenterButton} onPress={openClawdStatus}>
+        <View style={[styles.headerRightGroup, topBarRightCssStyle]}>
+          <Pressable style={[styles.headerButton, topBarButtonStyle('focus')]} onPress={() => router.push('/focus')}>
+            {!topBarIconsHidden && renderTopBarIcon('focus')}
+          </Pressable>
+          <Pressable style={[styles.headerButton, topBarButtonStyle('calendar')]} onPress={openCalendar}>
+            {!topBarIconsHidden && renderTopBarIcon('calendar')}
+          </Pressable>
+          <Pressable style={[styles.headerButton, topBarButtonStyle('music')]} onPress={() => router.push('/music')}>
+            {!topBarIconsHidden && renderTopBarIcon('music')}
+          </Pressable>
+          <Pressable style={[styles.headerButton, topBarButtonStyle('settings')]} onPress={() => router.push('/settings')}>
+            {!topBarIconsHidden && renderTopBarIcon('settings')}
+          </Pressable>
+        </View>
+        <View pointerEvents="box-none" style={[styles.headerCenterSlot, topBarCenterCssStyle]}>
+          <Pressable style={[styles.headerCenterButton, topBarCenterButtonCssStyle]} onPress={openClawdStatus}>
             {!topBarIconsHidden && (
-              <Image source={require('../assets/clawd.png')} style={styles.clawdHeaderIcon} resizeMode="contain" />
+              <Image source={require('../assets/clawd.png')} style={[styles.clawdHeaderIcon, clawdIconCssStyle]} resizeMode="contain" />
             )}
           </Pressable>
         </View>
@@ -1541,14 +1735,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     zIndex: 5,
+    height: 96,
     paddingTop: 48,
     paddingHorizontal: 12,
     paddingBottom: 8,
@@ -1562,7 +1754,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 104,
+    bottom: 0,
   },
   headerButton: {
     width: 40,
@@ -1572,14 +1764,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 8,
   },
   headerLeftGroup: {
+    position: 'absolute',
+    top: 48,
+    left: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    zIndex: 2,
   },
   headerRightGroup: {
+    position: 'absolute',
+    top: 48,
+    right: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    zIndex: 2,
   },
   headerCenterSlot: {
     position: 'absolute',
@@ -1596,6 +1796,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 8,
+  },
+  topBarIconSlot: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   clawdHeaderIcon: {
     width: 30,

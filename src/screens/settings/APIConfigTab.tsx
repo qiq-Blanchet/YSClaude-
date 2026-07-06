@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useThemeColors } from '../../theme/colors';
+import { useSettingsPageColors } from '../../theme/colors';
 import {
   useSettingsStore,
   type NamedAPIConfig,
@@ -40,7 +40,7 @@ type ModelPickerTarget = 'chat' | 'image';
 type ImageOptionTarget = 'size' | 'quality';
 
 export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
-  const colors = useThemeColors();
+  const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const router = useRouter();
   const {
@@ -478,7 +478,7 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
         <Switch
           value={generateThinking}
           onValueChange={setGenerateThinking}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -505,7 +505,7 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
         <Switch
           value={returnNativeThinking}
           onValueChange={setReturnNativeThinking}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
@@ -544,7 +544,7 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
         <Switch
           value={imageEnabled}
           onValueChange={setImageEnabled}
-          trackColor={{ false: colors.border, true: colors.primary }}
+          trackColor={{ false: colors.inputBorder, true: colors.primary }}
           thumbColor="#FFFFFF"
         />
       </View>
