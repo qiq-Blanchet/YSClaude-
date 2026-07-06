@@ -158,10 +158,13 @@ function normalizeServerUrl(value: string): string {
 
 function getRemoteConfig(): { serverUrl: string; token: string } | null {
   const config = useSettingsStore.getState().promptCacheConfig;
-  if (config?.keepaliveMode !== 'remote') return null;
   const serverUrl = normalizeServerUrl(config.remoteServerUrl || '');
   if (!serverUrl) return null;
   return { serverUrl, token: config.remoteAuthToken || '' };
+}
+
+function isRemoteKeepaliveEnabled(): boolean {
+  return !!useSettingsStore.getState().promptCacheConfig?.remoteKeepaliveEnabled;
 }
 
 async function postRemote(path: string, body: unknown): Promise<boolean> {
@@ -591,7 +594,7 @@ export async function syncPromptCacheRemoteSnapshot(
   snapshot: PromptCacheRemoteSnapshot,
   options: { flush?: boolean } = {}
 ): Promise<boolean> {
-  if (!getRemoteConfig()) return false;
+  if (!getRemoteConfig() || !isRemoteKeepaliveEnabled()) return false;
 
   const hadPendingWork = pendingSnapshots.length > 0 || snapshotSyncInFlight || !!snapshotSyncTimer;
   const shouldSyncImmediately = !hadPendingWork && latestSnapshotSyncedAt === null;
@@ -624,6 +627,30 @@ export async function syncPromptCacheRemoteSnapshot(
 
 export async function flushPromptCacheRemoteSnapshotNow(): Promise<boolean> {
   return flushLatestPromptCacheRemoteSnapshot();
+}
+
+export async function enablePromptCacheRemoteKeepalive(conversationId?: string | null): Promise<{ ok: boolean; error?: string }> {
+  if (pendingSnapshots.length > 0) {
+    const ok = await flushLatestPromptCacheRemoteSnapshot();
+    if (ok) return { ok: true };
+  }
+
+  const id = conversationId?.trim();
+  if (!id) return { ok: false, error: '当前没有可同步的对话' };
+
+  const result = await postRemoteJson('/v1/keepalive/enable', {
+    conversationId: id,
+    updatedAt: Date.now(),
+  });
+  if (result.ok) {
+    latestServerStatus = typeof result.data?.status === 'string' ? result.data.status : 'active';
+    latestServerDisabledReason = null;
+    latestServerNextKeepaliveAt = typeof result.data?.nextKeepaliveAt === 'number' ? result.data.nextKeepaliveAt : latestServerNextKeepaliveAt;
+    latestServerSnapshotHash = typeof result.data?.snapshotHash === 'string' ? result.data.snapshotHash : latestServerSnapshotHash;
+    latestServerUpdatedAt = Date.now();
+    notifySnapshotStatusListeners();
+  }
+  return { ok: result.ok, error: result.error };
 }
 
 export async function refreshPromptCacheRemoteServerStatus(preferredConversationId?: string | null): Promise<boolean> {

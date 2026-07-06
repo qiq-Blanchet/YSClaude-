@@ -81,9 +81,6 @@ interface Props {
   onSend: (text: string, imageUri?: string, imageGenerationReferenceUris?: string[]) => void | Promise<void>;
   onTriggerResponse: () => void | Promise<void>;
   onEnableWebCruise?: () => void | Promise<void>;
-  onKeepPromptCacheAlive?: () => void | Promise<void>;
-  isPromptCacheKeepaliveRunning?: boolean;
-  onOpenFishingPanel?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
   onStop?: () => void;
@@ -95,9 +92,6 @@ export function ChatInput({
   onSend,
   onTriggerResponse,
   onEnableWebCruise,
-  onKeepPromptCacheAlive,
-  isPromptCacheKeepaliveRunning,
-  onOpenFishingPanel,
   disabled,
   isStreaming,
   onStop,
@@ -231,23 +225,12 @@ export function ChatInput({
     await onEnableWebCruise?.();
   };
 
-  const handleKeepPromptCacheAlive = async () => {
-    if (disabled || isStreaming || isPromptCacheKeepaliveRunning) return;
-    setOptionsMenuVisible(false);
-    await onKeepPromptCacheAlive?.();
-  };
-
   const handleOpenMcpPanel = () => {
     setOptionsMenuVisible(false);
     setMcpPanelVisible(true);
     if (!mcpSelectedServerId && selectedMcpServer) {
       setMcpSelectedServerId(selectedMcpServer.id);
     }
-  };
-
-  const handleOpenFishingPanel = () => {
-    setOptionsMenuVisible(false);
-    onOpenFishingPanel?.();
   };
 
   const appendToInput = (content: string) => {
@@ -672,22 +655,8 @@ export function ChatInput({
               <Text style={styles.optionText}>AI网页巡游</Text>
             </Pressable>
             <View style={styles.optionDivider} />
-            <Pressable
-              style={[styles.optionItem, isPromptCacheKeepaliveRunning && styles.optionItemDisabled]}
-              onPress={() => void handleKeepPromptCacheAlive()}
-              disabled={!!isPromptCacheKeepaliveRunning}
-            >
-              <Text style={[styles.optionText, isPromptCacheKeepaliveRunning && styles.optionTextDisabled]}>
-                {isPromptCacheKeepaliveRunning ? '缓存保活中...' : '缓存保活'}
-              </Text>
-            </Pressable>
-            <View style={styles.optionDivider} />
             <Pressable style={styles.optionItem} onPress={handleOpenMcpPanel}>
               <Text style={styles.optionText}>MCP 管理</Text>
-            </Pressable>
-            <View style={styles.optionDivider} />
-            <Pressable style={styles.optionItem} onPress={handleOpenFishingPanel}>
-              <Text style={styles.optionText}>钓鱼面板</Text>
             </Pressable>
             <View style={styles.optionDivider} />
             <Pressable style={styles.optionItem} onPress={() => void pickImage()}>

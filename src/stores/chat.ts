@@ -5,7 +5,7 @@ import { File } from 'expo-file-system';
 import { Alert } from 'react-native';
 import { ChatMessage, streamChat, streamChatCompletion } from '../services/api';
 import { deleteGeneratedImageFile, generateOpenAIImage } from '../services/imageGeneration';
-import { cancelPromptCacheReminder, notifyReplyReady, schedulePromptCacheReminder } from '../services/notifications';
+import { notifyReplyReady } from '../services/notifications';
 import {
   ackPromptCacheRemoteActivity,
   ackPromptCacheRemoteInbox,
@@ -78,7 +78,6 @@ import {
 } from '../db/operations';
 
 const MESSAGE_PAGE_SIZE = 20;
-const PROMPT_CACHE_REMINDER_DELAY_MS = 55 * 60 * 1000;
 const FLOATING_STREAM_MAX_CHARS = 180;
 const FLOATING_STREAM_HARD_BOUNDARIES = '。！？!?；;\n';
 const FLOATING_STREAM_SOFT_BOUNDARIES = '，,、';
@@ -1002,35 +1001,24 @@ function handlePromptCacheKeepaliveAfterSuccess(
   const shouldKeepAlive = promptCacheEnabled && promptCacheTtl === '1h';
   const { request, hiddenRanges = [], flush = false } = options;
 
-  if (config.keepaliveMode === 'remote') {
-    if (shouldKeepAlive) {
-      const requestPromise = request
-        ? Promise.resolve(request)
-        : buildPromptCacheKeepaliveRequest(conversationId, hiddenRanges);
+  if (shouldKeepAlive && config.remoteKeepaliveEnabled) {
+    const requestPromise = request
+      ? Promise.resolve(request)
+      : buildPromptCacheKeepaliveRequest(conversationId, hiddenRanges);
 
-      requestPromise
-        .then((snapshotRequest) => syncPromptCacheRemoteSnapshot({
-          conversationId,
-          request: snapshotRequest,
-          agentTools: buildPromptCacheRemoteAgentTools(),
-        }, { flush }))
-        .catch((error) => {
-          console.warn('[PromptCache] 远程保活快照同步失败:', error);
-        });
-    } else {
-      disablePromptCacheRemoteKeepalive(conversationId).catch(() => undefined);
-    }
+    requestPromise
+      .then((snapshotRequest) => syncPromptCacheRemoteSnapshot({
+        conversationId,
+        request: snapshotRequest,
+        agentTools: buildPromptCacheRemoteAgentTools(),
+      }, { flush }))
+      .catch((error) => {
+        console.warn('[PromptCache] 远程保活快照同步失败:', error);
+      });
     return;
   }
 
-  if (shouldKeepAlive) {
-    schedulePromptCacheReminder({
-      conversationId,
-      triggerAt: Date.now() + PROMPT_CACHE_REMINDER_DELAY_MS,
-    }).catch(() => undefined);
-  } else {
-    cancelPromptCacheReminder(conversationId).catch(() => undefined);
-  }
+  disablePromptCacheRemoteKeepalive(conversationId).catch(() => undefined);
 }
 
 function buildPromptCacheRemoteAgentTools(): Parameters<typeof syncPromptCacheRemoteSnapshot>[0]['agentTools'] {

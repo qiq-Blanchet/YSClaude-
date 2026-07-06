@@ -17,10 +17,10 @@ import { type HiddenRange } from '../../types';
 import { getChatDiagnosticsConversation, type ChatDiagnosticsMessage } from '../../db/operations';
 import { formatFullTime } from '../../utils/time';
 import { importMyphonePrivateChatsFromPicker } from '../../services/myphoneImport';
-import { cancelAllPromptCacheReminders, rescheduleAllPromptCacheReminders } from '../../services/notifications';
 import {
   checkPromptCacheRemoteServer,
   disablePromptCacheRemoteKeepalive,
+  enablePromptCacheRemoteKeepalive,
   flushPromptCacheRemoteSnapshotNow,
   getPromptCacheRemoteSnapshotStatus,
   refreshPromptCacheRemoteServerStatus,
@@ -45,10 +45,6 @@ const PROMPT_CACHE_TTL_OPTIONS: Array<{ value: PromptCacheTtl; label: string }> 
   { value: '5m', label: '5min' },
   { value: '1h', label: '1h' },
 ];
-const PROMPT_CACHE_KEEPALIVE_MODE_OPTIONS = [
-  { value: 'local', label: '本地提醒' },
-  { value: 'remote', label: '远程保活' },
-] as const;
 const PROMPT_CACHE_PUSH_CHANNEL_OPTIONS: Array<{ value: PromptCacheConfig['pushChannel']; label: string }> = [
   { value: 'dingtalk', label: '钉钉' },
   { value: 'wxpusher', label: 'WxPusher' },
@@ -219,6 +215,7 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
   const [wxPusherTopicIdsText, setWxPusherTopicIdsText] = useState(promptCacheConfig?.wxPusherTopicIds || '');
   const [testingWxPusherPush, setTestingWxPusherPush] = useState(false);
   const [checkingRemoteKeepalive, setCheckingRemoteKeepalive] = useState(false);
+  const [switchingRemoteKeepalive, setSwitchingRemoteKeepalive] = useState(false);
   const [flushingRemoteSnapshot, setFlushingRemoteSnapshot] = useState(false);
   const [refreshingRemoteServerStatus, setRefreshingRemoteServerStatus] = useState(false);
   const [remoteSnapshotStatus, setRemoteSnapshotStatus] = useState(() => getPromptCacheRemoteSnapshotStatus());
@@ -260,9 +257,8 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
   }, []);
 
   useEffect(() => {
-    if ((promptCacheConfig?.keepaliveMode || 'local') !== 'remote') return;
     refreshPromptCacheRemoteServerStatus(conversationId).catch(() => undefined);
-  }, [conversationId, promptCacheConfig?.keepaliveMode, promptCacheConfig?.remoteAuthToken, promptCacheConfig?.remoteServerUrl]);
+  }, [conversationId, promptCacheConfig?.remoteAuthToken, promptCacheConfig?.remoteServerUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -528,10 +524,9 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
       quietStartMinutes: startMinutes,
       quietEndMinutes: endMinutes,
     });
-    rescheduleAllPromptCacheReminders().catch(() => undefined);
     setQuietStartText(formatClockMinutes(startMinutes));
     setQuietEndText(formatClockMinutes(endMinutes));
-    showToast('缓存提醒勿扰时段已保存');
+    showToast('远程保活勿扰时段已保存');
   }
 
   function handleSaveRemoteKeepaliveConfig() {
@@ -545,8 +540,43 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
       wxPusherAppToken: wxPusherAppTokenText.trim(),
       wxPusherUid: wxPusherUidText.trim(),
       wxPusherTopicIds: wxPusherTopicIdsText.trim(),
+      keepaliveMode: 'remote',
     });
     showToast('远程保活配置已保存');
+  }
+
+  async function handleToggleRemoteKeepalive(value: boolean) {
+    if (switchingRemoteKeepalive) return;
+    const serverUrl = remoteServerUrlText.trim();
+    const authToken = remoteAuthTokenText.trim();
+    if (value && !serverUrl) {
+      Alert.alert('提示', '请先填写远程保活服务地址');
+      return;
+    }
+
+    setPromptCacheConfig({
+      keepaliveMode: 'remote',
+      remoteKeepaliveEnabled: value,
+      remoteServerUrl: serverUrl,
+      remoteAuthToken: authToken,
+    });
+    setSwitchingRemoteKeepalive(true);
+    try {
+      if (value) {
+        const result = await enablePromptCacheRemoteKeepalive(conversationId);
+        await refreshPromptCacheRemoteServerStatus(conversationId);
+        showToast(result.ok ? '远程保活已开启并同步服务端' : (result.error || '远程保活已开启，等待下次快照同步'));
+      } else {
+        const ok = conversationId ? await disablePromptCacheRemoteKeepalive(conversationId) : true;
+        await refreshPromptCacheRemoteServerStatus(conversationId);
+        showToast(ok ? '远程保活已关闭并同步服务端' : '远程保活已关闭，服务端同步失败');
+      }
+    } catch (error: any) {
+      showToast(error?.message || '远程保活开关同步失败');
+    } finally {
+      setRemoteSnapshotStatus(getPromptCacheRemoteSnapshotStatus());
+      setSwitchingRemoteKeepalive(false);
+    }
   }
 
   function currentPushConfig(): PromptCacheConfig {
@@ -1033,10 +1063,8 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
           value={!!promptCacheConfig?.enabled}
           onValueChange={(value) => {
             setPromptCacheConfig({ enabled: value });
-            if (value) {
-              rescheduleAllPromptCacheReminders().catch(() => undefined);
-            } else {
-              cancelAllPromptCacheReminders().catch(() => undefined);
+            if (!value && conversationId) {
+              disablePromptCacheRemoteKeepalive(conversationId).catch(() => undefined);
             }
             showToast(value ? 'Prompt 缓存已开启' : 'Prompt 缓存已关闭');
           }}
@@ -1051,10 +1079,8 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
             style={[styles.segmentedButton, promptCacheTtl === item.value && styles.segmentedButtonActive]}
             onPress={() => {
               setPromptCacheConfig({ ttl: item.value });
-              if (item.value === '1h') {
-                rescheduleAllPromptCacheReminders().catch(() => undefined);
-              } else {
-                cancelAllPromptCacheReminders().catch(() => undefined);
+              if (item.value !== '1h' && conversationId) {
+                disablePromptCacheRemoteKeepalive(conversationId).catch(() => undefined);
               }
               showToast(`Prompt 缓存时间已设为 ${item.label}`);
             }}
@@ -1067,56 +1093,20 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
       </View>
       <Text style={styles.hint}>5min 使用 Claude 默认短缓存；1h 会在 cache_control 中附加 ttl。</Text>
 
-      <Text style={styles.label}>保活方式</Text>
-      <View style={styles.segmentedRow}>
-        {PROMPT_CACHE_KEEPALIVE_MODE_OPTIONS.map((item) => (
-          <Pressable
-            key={item.value}
-            style={[styles.segmentedButton, (promptCacheConfig?.keepaliveMode || 'local') === item.value && styles.segmentedButtonActive]}
-            onPress={() => {
-              if (item.value === 'remote') {
-                setPromptCacheConfig({ keepaliveMode: item.value });
-                cancelAllPromptCacheReminders().catch(() => undefined);
-              } else {
-                if (conversationId) {
-                  disablePromptCacheRemoteKeepalive(conversationId).catch(() => undefined);
-                }
-                setPromptCacheConfig({ keepaliveMode: item.value });
-                rescheduleAllPromptCacheReminders().catch(() => undefined);
-              }
-              showToast(`保活方式已设为 ${item.label}`);
-            }}
-          >
-            <Text style={[styles.segmentedText, (promptCacheConfig?.keepaliveMode || 'local') === item.value && styles.segmentedTextActive]}>
-              {item.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {(promptCacheConfig?.keepaliveMode || 'local') === 'local' ? (
+      <View style={styles.remoteKeepalivePanel}>
         <View style={styles.switchRow}>
           <View style={styles.switchText}>
-            <Text style={styles.label}>缓存保活系统通知</Text>
-            <Text style={styles.hint}>开启后，1h 缓存命中或保活成功后会安排 55 分钟后的系统通知。</Text>
+            <Text style={styles.label}>远程保活</Text>
+            <Text style={styles.hint}>开启后同步当前或已有 1h cache 快照到服务端；关闭会立即停用服务端保活。</Text>
           </View>
           <Switch
-            value={promptCacheConfig?.reminderEnabled !== false}
-            onValueChange={(value) => {
-              setPromptCacheConfig({ reminderEnabled: value });
-              if (value) {
-                rescheduleAllPromptCacheReminders().catch(() => undefined);
-              } else {
-                cancelAllPromptCacheReminders().catch(() => undefined);
-              }
-              showToast(value ? '缓存保活提醒已开启' : '缓存保活提醒已关闭');
-            }}
+            value={!!promptCacheConfig?.remoteKeepaliveEnabled}
+            onValueChange={(value) => void handleToggleRemoteKeepalive(value)}
+            disabled={switchingRemoteKeepalive}
             trackColor={{ true: colors.primary }}
           />
         </View>
-      ) : (
-        <View style={styles.remoteKeepalivePanel}>
-          <Text style={styles.hint}>远程服务会保存最后一次成功使用 1h cache 的请求快照，并按 55 分钟自动调用保活。自托管时会在服务端保存 API Key 和对话快照。</Text>
+        <Text style={styles.hint}>远程服务会保存最后一次成功使用 1h cache 的请求快照，并按 55 分钟自动调用保活。自托管时会在服务端保存 API Key 和对话快照。</Text>
           <Text style={styles.label}>服务地址</Text>
           <TextInput
             style={styles.input}
@@ -1369,19 +1359,17 @@ export function ChatSettingsTab({ showToast, keyboardBottomInset }: SettingsTabP
             </View>
           </View>
         </View>
-      )}
 
       <View style={styles.switchRow}>
         <View style={styles.switchText}>
           <Text style={styles.label}>非保活时段</Text>
-          <Text style={styles.hint}>提醒点或远程保活点落在该时段内时，取消本轮保活。</Text>
+          <Text style={styles.hint}>远程保活点落在该时段内时，取消本轮保活。</Text>
         </View>
         <Switch
           value={!!promptCacheConfig?.quietHoursEnabled}
           onValueChange={(value) => {
             setPromptCacheConfig({ quietHoursEnabled: value });
-            rescheduleAllPromptCacheReminders().catch(() => undefined);
-            showToast(value ? '缓存提醒勿扰已开启' : '缓存提醒勿扰已关闭');
+            showToast(value ? '远程保活勿扰已开启' : '远程保活勿扰已关闭');
           }}
           trackColor={{ true: colors.primary }}
         />

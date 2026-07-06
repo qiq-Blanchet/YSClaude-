@@ -296,6 +296,7 @@ export interface PromptCacheConfig {
   ttl: PromptCacheTtl;
   keepaliveMode: 'local' | 'remote';
   reminderEnabled: boolean;
+  remoteKeepaliveEnabled: boolean;
   quietHoursEnabled: boolean;
   quietStartMinutes: number;
   quietEndMinutes: number;
@@ -493,8 +494,9 @@ function normalizePromptCacheConfig(config?: Partial<PromptCacheConfig>): Prompt
   return {
     enabled: config?.enabled ?? false,
     ttl: config?.ttl === '1h' ? '1h' : '5m',
-    keepaliveMode: config?.keepaliveMode === 'remote' ? 'remote' : 'local',
-    reminderEnabled: config?.reminderEnabled ?? true,
+    keepaliveMode: 'remote',
+    reminderEnabled: false,
+    remoteKeepaliveEnabled: (config as any)?.remoteKeepaliveEnabled ?? (config?.keepaliveMode === 'remote'),
     quietHoursEnabled: config?.quietHoursEnabled ?? false,
     quietStartMinutes: clampMinutes(config?.quietStartMinutes, 23 * 60),
     quietEndMinutes: clampMinutes(config?.quietEndMinutes, 7 * 60),
@@ -848,8 +850,9 @@ export const useSettingsStore = create<SettingsState>()(
       promptCacheConfig: {
         enabled: false,
         ttl: '5m',
-        keepaliveMode: 'local',
-        reminderEnabled: true,
+        keepaliveMode: 'remote',
+        reminderEnabled: false,
+        remoteKeepaliveEnabled: false,
         quietHoursEnabled: false,
         quietStartMinutes: 23 * 60,
         quietEndMinutes: 7 * 60,

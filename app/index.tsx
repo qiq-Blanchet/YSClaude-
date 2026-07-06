@@ -39,7 +39,6 @@ import { usePeriodStore } from '../src/stores/period';
 import { useSettingsStore } from '../src/stores/settings';
 import { ChatBubble } from '../src/components/ChatBubble';
 import { ChatInput } from '../src/components/ChatInput';
-import { FishingFloatingPanel } from '../src/components/FishingFloatingPanel';
 import { ModelSelector } from '../src/components/ModelSelector';
 import { TimeDivider } from '../src/components/TimeDivider';
 import { IncomingLetter, Message } from '../src/types';
@@ -166,7 +165,6 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const appearanceConfig = useSettingsStore((state) => state.appearanceConfig);
   const hotboardConfig = useSettingsStore((state) => state.hotboardConfig);
-  const mcpToolConfig = useSettingsStore((state) => state.mcpToolConfig);
   const settingsHydrated = useSettingsStore((state) => state._hydrated);
   const incomingLetterEnabled = useSettingsStore((state) => !!state.incomingLetterConfig?.enabled);
   const topBarIconUris = appearanceConfig?.topBarIconUris || {};
@@ -187,18 +185,15 @@ export default function ChatScreen() {
     pendingScrollMessageId,
     openToBottomRequestId,
     isStreaming,
-    isPromptCacheKeepaliveRunning,
     isRemoteInboxSyncing,
     remoteInboxSyncConversationId,
     error,
     addUserMessage,
-    addSystemMessage,
     loadOlderMessages,
     loadNewerMessages,
     loadConversationAroundMessage,
     clearPendingScrollMessage,
     enableWebCruise,
-    keepPromptCacheAlive,
     triggerResponse,
     stopStreaming,
   } = useChatStore();
@@ -210,7 +205,6 @@ export default function ChatScreen() {
     removePeriodRecord,
   } = usePeriodStore();
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [fishingPanelVisible, setFishingPanelVisible] = useState(false);
   const [calendarVisible, setCalendarVisible] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
   const [monthJumpVisible, setMonthJumpVisible] = useState(false);
@@ -478,15 +472,6 @@ export default function ChatScreen() {
     }
     await enableWebCruise();
   }, [enableWebCruise, hotboardConfig, showToast]);
-
-  const handleKeepPromptCacheAlive = useCallback(async () => {
-    try {
-      await keepPromptCacheAlive();
-      showToast('缓存保活完成');
-    } catch (error: any) {
-      showToast(error?.message || '缓存保活失败');
-    }
-  }, [keepPromptCacheAlive, showToast]);
 
   const finishInitialPositioning = useCallback(() => {
     if (initialPositioningTimerRef.current !== null) {
@@ -1119,23 +1104,12 @@ export default function ChatScreen() {
           }}
           onTriggerResponse={triggerResponse}
           onEnableWebCruise={handleEnableWebCruise}
-          onKeepPromptCacheAlive={handleKeepPromptCacheAlive}
-          isPromptCacheKeepaliveRunning={isPromptCacheKeepaliveRunning}
-          onOpenFishingPanel={() => setFishingPanelVisible(true)}
           disabled={isStreaming}
           isStreaming={isStreaming}
           onStop={stopStreaming}
           onModelPress={() => setShowModelSelector(true)}
         />
       </Animated.View>
-
-      <FishingFloatingPanel
-        visible={fishingPanelVisible}
-        messages={messages}
-        mcpToolConfig={mcpToolConfig}
-        onUserActionMessage={addSystemMessage}
-        onClose={() => setFishingPanelVisible(false)}
-      />
 
       {showModelSelector && (
         <ModelSelector onClose={() => setShowModelSelector(false)} />
