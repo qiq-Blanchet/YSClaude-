@@ -46,8 +46,26 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
-function percentWidth(value: number): `${number}%` {
-  return `${value}%`;
+function shouldExpandMarkdownListBubble(text: string): boolean {
+  const listLinePattern = /^\s{0,3}(?:[-*+]\s+|\d+[.)]\s+)(.+)$/;
+  return text.split(/\r?\n/).some((line) => {
+    const match = listLinePattern.exec(line);
+    if (!match) return false;
+
+    const content = match[1].trim();
+    const cjkCount = (content.match(/[\u3400-\u9fff]/g) || []).length;
+    return content.length >= 20 || cjkCount >= 8;
+  });
+}
+
+function createMarkdownDividerStyle(textColor: string, compact = false) {
+  return {
+    alignSelf: 'stretch' as const,
+    width: '100%' as const,
+    height: StyleSheet.hairlineWidth,
+    marginVertical: compact ? 6 : 10,
+    backgroundColor: withAlpha(textColor, compact ? 0.2 : 0.16),
+  };
 }
 
 function withoutFontWeight(style?: TextStyle): TextStyle | undefined {
@@ -808,6 +826,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       {isUser && avatarNode}
     </View>
   ) : null;
+  const messageAvailableWidth = SCREEN_WIDTH - 32 - (sideAvatarsVisible ? MESSAGE_AVATAR_SIZE + 8 : 0);
 
   if (message.role === 'system') {
     return (
@@ -959,9 +978,13 @@ export const ChatBubble = React.memo(function ChatBubble({
     const MENU_HEIGHT = 44;
     const menuLeft = Math.max(8, menuAnchor.x + menuAnchor.width - MENU_WIDTH);
     const menuTop = Math.max(8, menuAnchor.y - MENU_HEIGHT - 8);
+    const userBubbleMaxWidth = Math.round(messageAvailableWidth * (userBubbleWidthPercent / 100));
+    const expandUserMarkdownListBubble = shouldExpandMarkdownListBubble(message.content);
     const userBubbleBaseStyle = [
       styles.userBubble,
       {
+        maxWidth: '100%' as const,
+        ...(expandUserMarkdownListBubble ? { width: userBubbleMaxWidth } : null),
         backgroundColor: userBubbleGlass.enabled
           ? 'rgba(255,255,255,0.28)'
           : userBubbleTransparent ? 'transparent' : userBubbleColor,
@@ -976,7 +999,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       <View
         style={[
           styles.userColumn,
-          { maxWidth: percentWidth(userBubbleWidthPercent) },
+          { maxWidth: userBubbleMaxWidth },
           customCssStyles.userBubble?.maxWidth !== undefined && { maxWidth: customCssStyles.userBubble.maxWidth },
           customCssStyles.userMessage,
           cssStyle('.user-message', '.chat-user-message', '.chat-user-column'),
@@ -1261,10 +1284,11 @@ export const ChatBubble = React.memo(function ChatBubble({
   }
 
   const assistantBubbleEnabled = assistantBubbleStyle === 'bubble';
+  const assistantBubbleMaxWidth = Math.round(messageAvailableWidth * (assistantBubbleWidthPercent / 100));
   const assistantBubbleBaseStyle = [
     styles.assistantBubble,
     {
-      maxWidth: percentWidth(assistantBubbleWidthPercent),
+      maxWidth: assistantBubbleMaxWidth,
       backgroundColor: assistantBubbleGlass.enabled
         ? 'rgba(255,255,255,0.24)'
         : assistantBubbleTransparent ? 'transparent' : assistantBubbleColor,
@@ -1289,13 +1313,14 @@ export const ChatBubble = React.memo(function ChatBubble({
     if (isStickerOnlyContent(content, messageStickers)) {
       return [
         styles.assistantBubble,
-        { maxWidth: percentWidth(assistantBubbleWidthPercent) },
+        { maxWidth: assistantBubbleMaxWidth },
         styles.userStickerOnlyBubble,
       ];
     }
 
     return [
       ...assistantBubbleBaseStyle,
+      shouldExpandMarkdownListBubble(content) && { width: assistantBubbleMaxWidth },
       hasStickerToken(content, messageStickers) && styles.userBubbleWithSticker,
     ];
   }
@@ -1847,6 +1872,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.inputBorder,
   },
   userBubble: {
+    alignSelf: 'flex-end',
+    minWidth: 0,
     backgroundColor: colors.userBubble,
     borderRadius: 20,
     paddingVertical: 12,
@@ -2297,6 +2324,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
 const createThinkingMarkdownStyles = (colors: ThemeColors) => StyleSheet.create({
   body: { width: '100%', fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
+  hr: createMarkdownDividerStyle(colors.textSecondary, true),
   ...createMarkdownListStyles(colors.textSecondary, 14, 21, true),
   code_inline: {
     backgroundColor: colors.surface, color: colors.primary,
@@ -2411,6 +2439,7 @@ const createUserMarkdownStyles = (
     marginTop: 0,
     marginBottom: 0,
   },
+  hr: createMarkdownDividerStyle(textColor, true),
   strong: {
     fontFamily: fonts.serifStrong,
     fontWeight: 'normal',
@@ -2467,6 +2496,7 @@ const createMarkdownStyles = (
     ...customTextStyleWithoutFontWeight,
   },
   paragraph: compactBubble ? { marginTop: 0, marginBottom: 0 } : {},
+  hr: createMarkdownDividerStyle(textColor, compactBubble),
   code_inline: {
     backgroundColor: colors.surface, color: colors.primary,
     paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, fontSize: 14, fontFamily: 'monospace',
