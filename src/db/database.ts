@@ -251,6 +251,37 @@ async function initTables(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_api_usage_started ON api_usage_events(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_api_usage_feature ON api_usage_events(feature, started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_api_usage_model ON api_usage_events(model, started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS conversation_artifacts (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      mime_type TEXT NOT NULL DEFAULT 'text/plain',
+      kind TEXT NOT NULL DEFAULT 'text',
+      current_version_id TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT 'user',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_conversation_artifacts_conversation
+      ON conversation_artifacts(conversation_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS conversation_artifact_versions (
+      id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT 'user',
+      created_at INTEGER NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (artifact_id) REFERENCES conversation_artifacts(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_conversation_artifact_versions_artifact
+      ON conversation_artifact_versions(artifact_id, version DESC);
   `);
 
   await runMigrations(database);
@@ -594,6 +625,43 @@ async function runMigrations(database: SQLite.SQLiteDatabase) {
         ON messages(conversation_id, created_at, id);
 
       PRAGMA user_version = 19;
+    `);
+  }
+
+  if (version < 20) {
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS conversation_artifacts (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        mime_type TEXT NOT NULL DEFAULT 'text/plain',
+        kind TEXT NOT NULL DEFAULT 'text',
+        current_version_id TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL DEFAULT 'user',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_conversation_artifacts_conversation
+        ON conversation_artifacts(conversation_id, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS conversation_artifact_versions (
+        id TEXT PRIMARY KEY,
+        artifact_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL DEFAULT 'user',
+        created_at INTEGER NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (artifact_id) REFERENCES conversation_artifacts(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_conversation_artifact_versions_artifact
+        ON conversation_artifact_versions(artifact_id, version DESC);
+
+      PRAGMA user_version = 20;
     `);
   }
 }

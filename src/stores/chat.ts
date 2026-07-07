@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand';
-import { Message, Conversation, HiddenRange, ToolInvocation, GeneratedPicture, DailyPaper } from '../types';
+import { Message, Conversation, HiddenRange, ToolInvocation, GeneratedPicture, DailyPaper, ConversationArtifact } from '../types';
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
 import { Alert } from 'react-native';
@@ -50,6 +50,11 @@ import {
 } from '../utils/androidAccessibilityControl';
 import { collectPinnedMcpResourceContexts } from '../services/toolModules/mcpRemote';
 import { consumePendingAndroidAccessibilityContext } from '../services/androidAccessibilitySession';
+import {
+  formatArtifactToken,
+  listConversationArtifacts,
+  pickConversationArtifactFile,
+} from '../services/conversationArtifacts';
 import {
   createConversation,
   updateConversation,
@@ -464,6 +469,7 @@ interface ChatState {
 
   sendMessage: (content: string, imageUri?: string, imageGenerationReferenceUris?: string[]) => Promise<void>;
   addUserMessage: (content: string, imageUri?: string, imageGenerationReferenceUris?: string[]) => Promise<Message | null>;
+  attachConversationFile: () => Promise<ConversationArtifact | null>;
   addSharedLinkToLatestConversation: (url: string) => Promise<string>;
   addDailyPaperToLatestConversation: (paper: DailyPaper) => Promise<string>;
   addSystemMessage: (content: string) => Promise<Message | null>;
@@ -526,6 +532,12 @@ function clipFloatingStreamText(content: string): string {
   }
 
   return `${start > 0 ? '...' : ''}${text.slice(start).trim()}`;
+}
+
+function extractArtifactCardTextFromToolResult(toolName: string, resultText: string): string | null {
+  if (toolName !== 'artifact_show_card') return null;
+  const match = resultText.match(/\[File:[^\]\r\n]+\][^\r\n]*/);
+  return match ? match[0].trim() : null;
 }
 
 function extractFloatingSpeechSegment(buffer: string, force: boolean): { segment: string; rest: string } | null {
@@ -1460,6 +1472,8 @@ async function runToolLoop(
   const webInteractionEnabled =
     webCruiseEnabled ||
     !!settings.webInteractionConfig?.enabled;
+  const conversationArtifactToolsEnabled = !!settings.conversationArtifactToolConfig?.enabled;
+  const htmlArtifactToolsEnabled = !!settings.htmlArtifactToolConfig?.enabled;
   const runCommandEnabled =
     !!settings.runCommandConfig?.enabled &&
     !!settings.runCommandConfig?.sshHost?.trim() &&
@@ -1472,6 +1486,8 @@ async function runToolLoop(
     memoryVault: memoryEnabled,
     webSearch: webEnabled,
     webInteraction: webInteractionEnabled,
+    conversationArtifacts: conversationArtifactToolsEnabled,
+    htmlArtifacts: htmlArtifactToolsEnabled,
     hotboard: webCruiseEnabled,
     runCommand: runCommandEnabled ? settings.runCommandConfig : undefined,
     nativeTools: {
@@ -1491,6 +1507,8 @@ async function runToolLoop(
     1,
     settings.memoryVaultConfig.maxToolCalls || 3,
     webInteractionEnabled ? settings.webInteractionConfig?.maxToolCalls || 8 : 0,
+    conversationArtifactToolsEnabled ? settings.conversationArtifactToolConfig?.maxToolCalls || 8 : 0,
+    htmlArtifactToolsEnabled ? settings.htmlArtifactToolConfig?.maxToolCalls || 8 : 0,
     settings.mcpToolConfig?.enabled ? settings.mcpToolConfig.maxToolCalls || 6 : 0,
     runCommandEnabled ? settings.runCommandConfig.maxToolCalls || 20 : 0,
     webCruiseEnabled ? 10 : 0,
@@ -1505,6 +1523,10 @@ async function runToolLoop(
   let toolCallCount = 0;
   let streamedContent = '';
   let totalTokens = 0;
+  const emitToken = (token: string) => {
+    streamedContent += token;
+    onToken(token);
+  };
 
   while (true) {
     const message = await streamChatCompletion({
@@ -1531,10 +1553,7 @@ async function runToolLoop(
           toolCount: tools.length,
         },
       },
-    }, (token) => {
-      streamedContent += token;
-      onToken(token);
-    }, signal);
+    }, emitToken, signal);
     if (typeof message.usage?.totalTokens === 'number') {
       totalTokens += message.usage.totalTokens;
     }
@@ -1576,11 +1595,20 @@ async function runToolLoop(
         args = {};
       }
       const result = await executeTool(tc.function.name, args, {
+        conversationId: options?.conversationId,
         memoryVaultConfig: settings.memoryVaultConfig,
         webSearchConfig: settings.webSearchConfig,
         webInteractionConfig: {
           ...settings.webInteractionConfig,
           enabled: webInteractionEnabled,
+        },
+        conversationArtifactToolConfig: {
+          ...settings.conversationArtifactToolConfig,
+          enabled: conversationArtifactToolsEnabled,
+        },
+        htmlArtifactToolConfig: {
+          ...settings.htmlArtifactToolConfig,
+          enabled: htmlArtifactToolsEnabled,
         },
         hotboardConfig: settings.hotboardConfig,
         runCommandConfig: settings.runCommandConfig,
@@ -1590,6 +1618,10 @@ async function runToolLoop(
       });
       const resultText = getToolResultText(result);
       const displayResult = getToolResultDisplayContent(result);
+      const artifactCardText = extractArtifactCardTextFromToolResult(tc.function.name, resultText);
+      if (artifactCardText && !streamedContent.includes(artifactCardText)) {
+        emitToken(`${streamedContent.trim() ? '\n\n' : ''}${artifactCardText}`);
+      }
       onToolInvocation?.({
         callId: tc.id,
         name: tc.function.name,
@@ -1601,7 +1633,9 @@ async function runToolLoop(
       messages.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: resultText,
+        content: artifactCardText
+          ? `${resultText}\n\n[客户端提示] 文件卡片已自动显示在当前 AI 回复中，后续回复不要重复输出 ${artifactCardText}。`
+          : resultText,
       });
       const imageContextMessage = buildToolImageContextMessage(tc.function.name, result);
       if (imageContextMessage) {
@@ -1762,6 +1796,22 @@ async function streamAssistantResponse(
 
   if (attachedWebViewContext) {
     runtimeSections.push(attachedWebViewContext.apiContent);
+  }
+
+  if (settings.conversationArtifactToolConfig?.enabled || settings.htmlArtifactToolConfig?.enabled) {
+    try {
+      const artifacts = await listConversationArtifacts(conversationId);
+      if (artifacts.length > 0) {
+        runtimeSections.push([
+          '当前对话绑定的文件（AI 只能通过 artifact_* 工具访问当前对话文件）：',
+          ...artifacts.slice(0, 30).map((artifact) =>
+            `- ${artifact.name} id=${artifact.id} kind=${artifact.kind} size=${artifact.size}`
+          ),
+        ].join('\n'));
+      }
+    } catch (err) {
+      console.warn('[Chat] 读取对话文件失败:', err);
+    }
   }
 
   try {
@@ -2129,6 +2179,69 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await insertMessage(conversationId, userMessage);
     await updateConversation(conversationId, { updatedAt: Date.now() });
     return userMessage;
+  },
+
+  attachConversationFile: async () => {
+    const { isStreaming } = get();
+    if (isStreaming) return null;
+
+    let { conversationId } = get();
+    const settings = useSettingsStore.getState();
+    if (!settings._hydrated) return null;
+    const config = settings.apiConfigs[settings.activeConfigIndex];
+
+    if (!config || !config.baseUrl || !config.apiKey) {
+      set({ error: '请先在设置中配置 API' });
+      return null;
+    }
+
+    if (!conversationId) {
+      conversationId = randomUUID();
+      const now = Date.now();
+      const conv: Conversation = {
+        id: conversationId,
+        title: '[文件]',
+        systemPrompt: settings.systemPrompt,
+        model: config.model,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await createConversation(conv);
+      set({
+        conversationId,
+        hasOlderMessages: false,
+        hasNewerMessages: false,
+        isLoadingNewerMessages: false,
+        messageFloorOffset: 0,
+      });
+    }
+
+    const artifact = await pickConversationArtifactFile(conversationId);
+    if (!artifact) return null;
+
+    if ((await getPendingResponseBoundaryMessageId(conversationId)) === undefined) {
+      const existingMessages = await getMessagesByConversation(conversationId);
+      const boundaryMessage = [...existingMessages]
+        .reverse()
+        .find((message) => message.role === 'user' || message.role === 'assistant');
+      await setPendingResponseBoundaryMessageId(conversationId, boundaryMessage?.id ?? null);
+    }
+
+    const userMessage: Message = {
+      id: randomUUID(),
+      role: 'user',
+      content: `${formatArtifactToken(artifact.id)} ${artifact.name}`,
+      createdAt: Date.now(),
+    };
+
+    set((state) => ({
+      messages: [...state.messages, userMessage],
+      error: null,
+    }));
+
+    await insertMessage(conversationId, userMessage);
+    await updateConversation(conversationId, { updatedAt: Date.now() });
+    return artifact;
   },
 
   // Android 系统分享入口：只把链接作为普通用户文本消息存入最新创建的聊天。

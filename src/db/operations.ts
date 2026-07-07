@@ -29,6 +29,9 @@ import {
   ApiUsageSummary,
   IncomingLetter,
   IncomingLetterStatus,
+  ConversationArtifact,
+  ConversationArtifactKind,
+  ConversationArtifactVersion,
 } from '../types';
 import {
   ANDROID_ACCESSIBILITY_CAPTURE_NOTICE_PREFIX,
@@ -103,6 +106,29 @@ interface IncomingLetterRow {
   updated_at: number;
   error_message: string | null;
   tool_invocations: string | null;
+}
+
+interface ConversationArtifactRow {
+  id: string;
+  conversation_id: string;
+  name: string;
+  mime_type: string;
+  kind: string;
+  current_version_id: string;
+  created_by: string;
+  created_at: number;
+  updated_at: number;
+  size: number;
+}
+
+interface ConversationArtifactVersionRow {
+  id: string;
+  artifact_id: string;
+  version: number;
+  content: string;
+  created_by: string;
+  created_at: number;
+  size: number;
 }
 
 export interface ChatDiagnosticsConversation {
@@ -197,6 +223,8 @@ export async function updateConversation(id: string, updates: Partial<Pick<Conve
 
 export async function deleteConversation(id: string): Promise<void> {
   const db = await getDatabase();
+  await db.runAsync('DELETE FROM conversation_artifact_versions WHERE artifact_id IN (SELECT id FROM conversation_artifacts WHERE conversation_id = ?)', [id]);
+  await db.runAsync('DELETE FROM conversation_artifacts WHERE conversation_id = ?', [id]);
   await db.runAsync('DELETE FROM messages WHERE conversation_id = ?', [id]);
   await db.runAsync('DELETE FROM conversations WHERE id = ?', [id]);
 }
@@ -531,6 +559,200 @@ export async function getUnshownIncomingLettersByDate(dateKey: string): Promise<
 
 export async function markIncomingLetterShown(id: string, shownAt = Date.now()): Promise<void> {
   await updateIncomingLetter(id, { shownAt, updatedAt: shownAt });
+}
+
+function normalizeArtifactKind(value: string): ConversationArtifactKind {
+  if (
+    value === 'markdown' ||
+    value === 'html' ||
+    value === 'css' ||
+    value === 'javascript' ||
+    value === 'typescript' ||
+    value === 'json' ||
+    value === 'csv'
+  ) {
+    return value;
+  }
+  return 'text';
+}
+
+function normalizeArtifactCreator(value: string): 'user' | 'assistant' {
+  return value === 'assistant' ? 'assistant' : 'user';
+}
+
+function mapConversationArtifactRow(row: ConversationArtifactRow): ConversationArtifact {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    name: row.name,
+    mimeType: row.mime_type,
+    kind: normalizeArtifactKind(row.kind),
+    currentVersionId: row.current_version_id,
+    createdBy: normalizeArtifactCreator(row.created_by),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    size: row.size,
+  };
+}
+
+function mapConversationArtifactVersionRow(row: ConversationArtifactVersionRow): ConversationArtifactVersion {
+  return {
+    id: row.id,
+    artifactId: row.artifact_id,
+    version: row.version,
+    content: row.content,
+    createdBy: normalizeArtifactCreator(row.created_by),
+    createdAt: row.created_at,
+    size: row.size,
+  };
+}
+
+export async function insertConversationArtifact(
+  artifact: ConversationArtifact,
+  version: ConversationArtifactVersion
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO conversation_artifacts
+      (id, conversation_id, name, mime_type, kind, current_version_id, created_by, created_at, updated_at, size)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      artifact.id,
+      artifact.conversationId,
+      artifact.name,
+      artifact.mimeType,
+      artifact.kind,
+      artifact.currentVersionId,
+      artifact.createdBy,
+      artifact.createdAt,
+      artifact.updatedAt,
+      artifact.size,
+    ]
+  );
+  await db.runAsync(
+    `INSERT OR REPLACE INTO conversation_artifact_versions
+      (id, artifact_id, version, content, created_by, created_at, size)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      version.id,
+      version.artifactId,
+      version.version,
+      version.content,
+      version.createdBy,
+      version.createdAt,
+      version.size,
+    ]
+  );
+}
+
+export async function getConversationArtifacts(conversationId: string): Promise<ConversationArtifact[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<ConversationArtifactRow>(
+    'SELECT * FROM conversation_artifacts WHERE conversation_id = ? ORDER BY updated_at DESC',
+    [conversationId]
+  );
+  return rows.map(mapConversationArtifactRow);
+}
+
+export async function getConversationArtifact(
+  conversationId: string,
+  artifactId: string
+): Promise<ConversationArtifact | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<ConversationArtifactRow>(
+    'SELECT * FROM conversation_artifacts WHERE conversation_id = ? AND id = ? LIMIT 1',
+    [conversationId, artifactId]
+  );
+  return row ? mapConversationArtifactRow(row) : null;
+}
+
+export async function getConversationArtifactCurrentVersion(
+  conversationId: string,
+  artifactId: string
+): Promise<{ artifact: ConversationArtifact; version: ConversationArtifactVersion } | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<ConversationArtifactRow & ConversationArtifactVersionRow>(
+    `SELECT
+        a.id, a.conversation_id, a.name, a.mime_type, a.kind, a.current_version_id,
+        a.created_by, a.created_at, a.updated_at, a.size,
+        v.id as version_id, v.artifact_id, v.version, v.content,
+        v.created_by as version_created_by, v.created_at as version_created_at, v.size as version_size
+       FROM conversation_artifacts a
+       JOIN conversation_artifact_versions v ON v.id = a.current_version_id
+      WHERE a.conversation_id = ? AND a.id = ?
+      LIMIT 1`,
+    [conversationId, artifactId]
+  ) as any;
+  if (!row) return null;
+  return {
+    artifact: mapConversationArtifactRow(row),
+    version: {
+      id: row.version_id,
+      artifactId: row.artifact_id,
+      version: row.version,
+      content: row.content,
+      createdBy: normalizeArtifactCreator(row.version_created_by),
+      createdAt: row.version_created_at,
+      size: row.version_size,
+    },
+  };
+}
+
+export async function insertConversationArtifactVersion(
+  conversationId: string,
+  artifactId: string,
+  version: Omit<ConversationArtifactVersion, 'version'> & { version?: number }
+): Promise<ConversationArtifactVersion> {
+  const db = await getDatabase();
+  const current = await getConversationArtifact(conversationId, artifactId);
+  if (!current) {
+    throw new Error('找不到当前对话中的文件');
+  }
+  const latestRow = await db.getFirstAsync<{ latest: number | null }>(
+    'SELECT MAX(version) as latest FROM conversation_artifact_versions WHERE artifact_id = ?',
+    [artifactId]
+  );
+  const nextVersionNumber = version.version ?? ((latestRow?.latest || 0) + 1);
+  const next: ConversationArtifactVersion = {
+    ...version,
+    version: nextVersionNumber,
+  };
+  await db.runAsync(
+    `INSERT OR REPLACE INTO conversation_artifact_versions
+      (id, artifact_id, version, content, created_by, created_at, size)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      next.id,
+      next.artifactId,
+      next.version,
+      next.content,
+      next.createdBy,
+      next.createdAt,
+      next.size,
+    ]
+  );
+  await db.runAsync(
+    'UPDATE conversation_artifacts SET current_version_id = ?, updated_at = ?, size = ? WHERE conversation_id = ? AND id = ?',
+    [next.id, next.createdAt, next.size, conversationId, artifactId]
+  );
+  await db.runAsync('UPDATE conversations SET updated_at = ? WHERE id = ?', [next.createdAt, conversationId]);
+  return next;
+}
+
+export async function deleteConversationArtifact(
+  conversationId: string,
+  artifactId: string
+): Promise<ConversationArtifact | null> {
+  const db = await getDatabase();
+  const artifact = await getConversationArtifact(conversationId, artifactId);
+  if (!artifact) return null;
+  await db.runAsync('DELETE FROM conversation_artifact_versions WHERE artifact_id = ?', [artifactId]);
+  await db.runAsync('DELETE FROM conversation_artifacts WHERE conversation_id = ? AND id = ?', [
+    conversationId,
+    artifactId,
+  ]);
+  await db.runAsync('UPDATE conversations SET updated_at = ? WHERE id = ?', [Date.now(), conversationId]);
+  return artifact;
 }
 
 export async function deleteMessage(id: string): Promise<void> {

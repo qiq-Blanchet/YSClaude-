@@ -38,6 +38,8 @@ export type AppearanceCssRuleStyle = ViewStyle & TextStyle & {
   backdropFilter?: string;
   blurIntensity?: number;
   blurTint?: AppearanceBlurTint;
+  svgPath?: string;
+  svgViewBox?: string;
 };
 export type AppearanceCssStyles = Partial<Record<AppearanceCssTarget, AppearanceCssRuleStyle>> & {
   selectors?: Record<string, AppearanceCssRuleStyle>;
@@ -293,6 +295,8 @@ const PROPERTY_ALIASES: Record<string, string> = {
   'padding-right': 'paddingRight',
   'padding-top': 'paddingTop',
   'row-gap': 'rowGap',
+  'svg-path': 'svgPath',
+  'svg-view-box': 'svgViewBox',
   'text-align': 'textAlign',
   'text-decoration-line': 'textDecorationLine',
   'text-shadow-color': 'textShadowColor',
@@ -331,6 +335,14 @@ function parseBoxValue(value: string): number[] | undefined {
   return numbers as number[];
 }
 
+function isSvgPathValue(value: string): boolean {
+  return value.length <= 700 && /^[MmZzLlHhVvCcSsQqTtAaEe0-9\s,.\-+]+$/.test(value);
+}
+
+function isSvgViewBoxValue(value: string): boolean {
+  return value.length <= 80 && /^-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?$/.test(value);
+}
+
 function assignBoxStyle(style: Record<string, unknown>, base: 'margin' | 'padding', value: string) {
   const numbers = parseBoxValue(value);
   if (!numbers) return;
@@ -357,7 +369,8 @@ function parseDeclaration(property: string, value: string): Record<string, unkno
   const cleanValue = value.trim();
   const lowerValue = cleanValue.toLowerCase();
 
-  if (!prop || !cleanValue || cleanValue.length > 120) return style;
+  if (!prop || !cleanValue) return style;
+  if (cleanValue.length > 120 && prop !== 'svgPath') return style;
 
   if (prop === 'margin' || prop === 'padding') {
     assignBoxStyle(style, prop, cleanValue);
@@ -402,6 +415,20 @@ function parseDeclaration(property: string, value: string): Record<string, unkno
   if (prop === 'blurTint') {
     if (/^[a-z][a-z0-9]*$/i.test(cleanValue)) {
       style.blurTint = cleanValue;
+    }
+    return style;
+  }
+
+  if (prop === 'svgPath') {
+    if (isSvgPathValue(cleanValue)) {
+      style.svgPath = cleanValue;
+    }
+    return style;
+  }
+
+  if (prop === 'svgViewBox') {
+    if (isSvgViewBoxValue(cleanValue)) {
+      style.svgViewBox = cleanValue;
     }
     return style;
   }

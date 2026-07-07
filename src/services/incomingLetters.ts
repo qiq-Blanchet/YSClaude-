@@ -74,6 +74,8 @@ async function generateLetterContent(
   const tools = getToolDefinitions({
     memoryVault: memoryEnabled,
     webSearch: false,
+    webInteraction: false,
+    htmlArtifacts: false,
   });
   const maxToolCalls = memoryEnabled
     ? Math.max(1, settings.memoryVaultConfig.maxToolCalls || 3)
@@ -143,6 +145,8 @@ async function generateLetterContent(
         memoryVaultConfig: settings.memoryVaultConfig,
         webSearchConfig: settings.webSearchConfig,
         webInteractionConfig: settings.webInteractionConfig,
+        conversationArtifactToolConfig: { enabled: false, maxToolCalls: 0 },
+        htmlArtifactToolConfig: settings.htmlArtifactToolConfig,
         hotboardConfig: settings.hotboardConfig,
         runCommandConfig: settings.runCommandConfig,
         nativeToolConfig: settings.nativeToolConfig,

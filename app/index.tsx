@@ -314,6 +314,7 @@ export default function ChatScreen() {
     remoteInboxSyncConversationId,
     error,
     addUserMessage,
+    attachConversationFile,
     loadOlderMessages,
     loadNewerMessages,
     loadConversationAroundMessage,
@@ -1162,8 +1163,13 @@ export default function ChatScreen() {
   const renderMessageItem = useCallback<ListRenderItem<Message>>(
     ({ item, index }) => {
       const prev = index > 0 ? messages[index - 1] : null;
+      const next = index < messages.length - 1 ? messages[index + 1] : null;
       const isSeparatedByTime =
         !prev || item.createdAt - prev.createdAt >= TIME_GAP_THRESHOLD_MS;
+      const isFollowedBySameRole =
+        (item.role === 'user' || item.role === 'assistant') &&
+        next?.role === item.role &&
+        next.createdAt - item.createdAt < TIME_GAP_THRESHOLD_MS;
       const showDivider =
         isSeparatedByTime &&
         !dismissedDividers.has(item.id);
@@ -1193,6 +1199,7 @@ export default function ChatScreen() {
               floorNumber={floor}
               showFloorNumber={visibleFloorMessageId === item.id && floor !== undefined}
               showAvatarHeader={showAvatarHeader}
+              showBubbleTail={!isFollowedBySameRole}
               onBubblePress={
                 floor !== undefined ? () => handleBubblePress(item.id) : undefined
               }
@@ -1533,6 +1540,7 @@ export default function ChatScreen() {
           }}
           onTriggerResponse={triggerResponse}
           onEnableWebCruise={handleEnableWebCruise}
+          onAttachFile={attachConversationFile}
           disabled={isStreaming}
           isStreaming={isStreaming}
           onStop={stopStreaming}

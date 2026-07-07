@@ -1,5 +1,7 @@
 import {
+  ConversationArtifactToolConfig,
   HotboardConfig,
+  HtmlArtifactToolConfig,
   McpToolConfig,
   MemoryVaultConfig,
   NativeToolConfig,
@@ -25,6 +27,8 @@ export interface ToolDefinitionConfig {
   memoryVault: boolean;
   webSearch: boolean;
   webInteraction?: boolean;
+  conversationArtifacts?: boolean;
+  htmlArtifacts?: boolean;
   hotboard?: boolean;
   runCommand?: RunCommandConfig;
   nativeTools?: NativeToolConfig;
@@ -32,9 +36,12 @@ export interface ToolDefinitionConfig {
 }
 
 export interface ToolExecutionContext {
+  conversationId?: string;
   memoryVaultConfig: MemoryVaultConfig;
   webSearchConfig: WebSearchConfig;
   webInteractionConfig: WebInteractionConfig;
+  conversationArtifactToolConfig: ConversationArtifactToolConfig;
+  htmlArtifactToolConfig: HtmlArtifactToolConfig;
   hotboardConfig: HotboardConfig;
   runCommandConfig: RunCommandConfig;
   nativeToolConfig: NativeToolConfig;

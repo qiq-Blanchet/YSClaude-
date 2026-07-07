@@ -57,6 +57,8 @@
 | `.chat-user-bubble` | 用户消息气泡别名 |
 | `.user-bubble-tail` | 用户消息气泡尾巴，默认隐藏 |
 | `.chat-user-bubble-tail` | 用户气泡尾巴别名 |
+| `.user-bubble-tail-svg` | 用户消息 SVG 气泡尾巴，默认隐藏 |
+| `.chat-user-bubble-tail-svg` | 用户 SVG 气泡尾巴别名 |
 | `.user-text` | 用户消息文字/Markdown 正文 |
 | `.chat-user-text` | 用户消息文字/Markdown 正文别名 |
 | `.user-image` | 用户发送图片 |
@@ -68,8 +70,12 @@
 | `.chat-assistant-row` | AI 消息整行容器别名 |
 | `.assistant-bubble` | AI 气泡模式下的消息气泡 |
 | `.chat-assistant-bubble` | AI 气泡别名 |
+| `.assistant-bubble-stack` | AI 气泡模式下，同一条 AI 消息内多个气泡的纵向容器 |
+| `.chat-assistant-bubble-stack` | AI 气泡纵向容器别名 |
 | `.assistant-bubble-tail` | AI 气泡模式下的气泡尾巴，默认隐藏 |
 | `.chat-assistant-bubble-tail` | AI 气泡尾巴别名 |
+| `.assistant-bubble-tail-svg` | AI 气泡模式下的 SVG 气泡尾巴，默认隐藏 |
+| `.chat-assistant-bubble-tail-svg` | AI SVG 气泡尾巴别名 |
 | `.assistant-content` | AI 非气泡模式正文区域 |
 | `.chat-assistant-content` | AI 正文区域别名 |
 | `.assistant-text` | AI 消息文字/Markdown 正文 |
@@ -171,6 +177,8 @@ max-width
 min-height
 max-height
 opacity
+svg-path
+svg-view-box
 text-align
 ```
 
@@ -257,6 +265,14 @@ text-align
 
 `.user-bubble-tail` 和 `.assistant-bubble-tail` 默认是隐藏的三角形节点；写 `display: flex` 后会显示。尾巴位于气泡内部，通常需要把气泡的 `overflow` 设为 `visible`，尤其是 AI 气泡默认会裁剪内容。
 
+用户和 AI 纯表情包消息不会显示气泡尾巴，避免表情包被尾巴拉开距离；其中用户纯表情包会直接渲染图片，不应用 `.user-bubble`。
+
+如果想要更圆润的尾巴，可以改用 SVG 尾巴类：`.user-bubble-tail-svg` 和 `.assistant-bubble-tail-svg`。SVG 尾巴同样默认隐藏，写 `display: flex` 后显示；填充色优先读取 `color`，其次读取 `background-color`。
+
+同一方在时间分隔阈值内连续发送多条消息时，普通三角尾巴仍会显示在每个气泡上；SVG 尾巴只会显示在最后一条消息上。
+
+SVG 尾巴还支持自定义路径：`svg-view-box` 对应 SVG 的 `viewBox`，`svg-path` 对应 `<Path d="...">`。路径值只支持常见 SVG path 命令和数字字符；如果写了不支持的字符会被忽略。
+
 模拟微信样式可以这样写：
 
 ```css
@@ -274,6 +290,10 @@ text-align
   border-top-left-radius: 2px;
   padding: 9px 11px;
   overflow: visible;
+}
+
+.assistant-bubble-stack {
+  gap: 2px;
 }
 
 .user-bubble-tail {
@@ -302,6 +322,43 @@ text-align
   border-top-color: transparent;
   border-bottom-color: transparent;
   border-right-color: #ffffff;
+}
+```
+
+使用 SVG 尾巴时，可以把上面两段 `*-bubble-tail` 换成：
+
+```css
+.user-bubble-tail-svg {
+  display: flex;
+  right: -10px;
+  bottom: -2px;
+  width: 18px;
+  height: 20px;
+  color: #95ec69;
+}
+
+.assistant-bubble-tail-svg {
+  display: flex;
+  left: -10px;
+  bottom: -2px;
+  width: 18px;
+  height: 20px;
+  color: #ffffff;
+}
+```
+
+自定义 SVG 路径示例：
+
+```css
+.user-bubble-tail-svg {
+  display: flex;
+  right: -10px;
+  bottom: -2px;
+  width: 18px;
+  height: 20px;
+  color: #007aff;
+  svg-view-box: 0 0 18 20;
+  svg-path: M0 0 C1.8 6.2 6.4 10.8 14.6 11.6 C11.5 13.1 11.4 16.9 17.4 20 C8.2 19.4 1.8 13.7 0 5.2 Z;
 }
 ```
 

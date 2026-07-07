@@ -43,17 +43,47 @@ export interface WebViewOpenOptions {
   userAgent?: 'mobile' | 'desktop';
 }
 
+export interface HtmlArtifactOpenOptions {
+  messageId?: string;
+  htmlBlockIndex?: number;
+  artifactId?: string;
+  artifactName?: string;
+  html: string;
+  title?: string;
+}
+
+export interface HtmlArtifactInfo {
+  messageId?: string;
+  htmlBlockIndex?: number;
+  artifactId?: string;
+  artifactName?: string;
+  title: string;
+  dirty: boolean;
+}
+
+export interface HtmlArtifactPatch {
+  text?: string;
+  html?: string;
+  style?: Record<string, string | number | null | undefined>;
+  attributes?: Record<string, string | number | boolean | null | undefined>;
+}
+
 export interface WebViewHostActions {
   show: () => void;
   isOpen: () => boolean;
   observeIfOpen: () => Promise<WebViewObservation | null>;
   open: (url: string, options?: WebViewOpenOptions) => Promise<WebViewObservation>;
+  openHtmlArtifact: (options: HtmlArtifactOpenOptions) => Promise<WebViewObservation>;
   observe: () => Promise<WebViewObservation>;
   tap: (x: number, y: number) => Promise<WebViewTapResult>;
   clickElement: (index: number) => Promise<WebViewTapResult>;
   clickSelector: (selector: string) => Promise<WebViewTapResult>;
   wait: (ms: number) => Promise<WebViewObservation>;
   screenshot: () => Promise<WebViewScreenshot>;
+  getHtmlArtifactSource: () => Promise<{ html: string; info: HtmlArtifactInfo }>;
+  replaceHtmlArtifactSource: (html: string) => Promise<WebViewObservation>;
+  patchHtmlArtifactElement: (selector: string, patch: HtmlArtifactPatch) => Promise<WebViewObservation>;
+  saveHtmlArtifact: () => Promise<{ messageId?: string; htmlBlockIndex?: number; artifactId?: string }>;
 }
 
 let hostActions: WebViewHostActions | null = null;
@@ -79,6 +109,10 @@ export async function openWebView(
   options?: WebViewOpenOptions
 ): Promise<WebViewObservation> {
   return getHostActions().open(url, options);
+}
+
+export async function openHtmlArtifact(options: HtmlArtifactOpenOptions): Promise<WebViewObservation> {
+  return getHostActions().openHtmlArtifact(options);
 }
 
 export function showWebViewPanel(): void {
@@ -115,4 +149,23 @@ export async function waitWebView(ms: number): Promise<WebViewObservation> {
 
 export async function screenshotWebView(): Promise<WebViewScreenshot> {
   return getHostActions().screenshot();
+}
+
+export async function getHtmlArtifactSource(): Promise<{ html: string; info: HtmlArtifactInfo }> {
+  return getHostActions().getHtmlArtifactSource();
+}
+
+export async function replaceHtmlArtifactSource(html: string): Promise<WebViewObservation> {
+  return getHostActions().replaceHtmlArtifactSource(html);
+}
+
+export async function patchHtmlArtifactElement(
+  selector: string,
+  patch: HtmlArtifactPatch
+): Promise<WebViewObservation> {
+  return getHostActions().patchHtmlArtifactElement(selector, patch);
+}
+
+export async function saveHtmlArtifact(): Promise<{ messageId?: string; htmlBlockIndex?: number; artifactId?: string }> {
+  return getHostActions().saveHtmlArtifact();
 }

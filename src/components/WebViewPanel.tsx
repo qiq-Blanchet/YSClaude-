@@ -22,11 +22,16 @@ import { lightColors, useThemeColors, type ThemeColors } from '../theme/colors';
 import { sqliteStorage } from '../db/kv-storage';
 import {
   registerWebViewHost,
+  HtmlArtifactOpenOptions,
+  HtmlArtifactPatch,
   WebViewObservation,
   WebViewOpenOptions,
   WebViewScreenshot,
   WebViewTapResult,
 } from '../services/webviewController';
+import { useChatStore } from '../stores/chat';
+import { replaceConversationArtifactContent } from '../services/conversationArtifacts';
+import { replaceMarkdownHtmlCodeBlock } from '../utils/htmlArtifacts';
 
 
 let colors = lightColors;
@@ -51,6 +56,18 @@ const MAX_WEB_BOOKMARKS = 80;
 const DESKTOP_WEBVIEW_MIN_WIDTH = 1280;
 const DESKTOP_WEBVIEW_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+const HTML_ARTIFACT_URL = 'https://ysclaude.local/html-artifact';
+
+type WebViewSourceMode = 'url' | 'html-artifact';
+
+interface HtmlArtifactSession {
+  messageId?: string;
+  htmlBlockIndex?: number;
+  artifactId?: string;
+  artifactName?: string;
+  title: string;
+  originalHtml: string;
+}
 
 interface WebBookmark {
   id: string;
@@ -525,6 +542,113 @@ async function saveWebBookmarks(bookmarks: WebBookmark[]): Promise<void> {
   await sqliteStorage.setItem(WEB_BOOKMARKS_KEY, JSON.stringify(bookmarks.slice(0, MAX_WEB_BOOKMARKS)));
 }
 
+function buildHtmlArtifactDocument(rawHtml: string): string {
+  if (/<(?:!doctype|html|head|body)\b/i.test(rawHtml)) {
+    return rawHtml;
+  }
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      background: #ffffff;
+      color: #111111;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      padding: 16px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+${rawHtml}
+</body>
+</html>`;
+}
+
+function buildPatchElementScript(selector: string, patch: HtmlArtifactPatch): string {
+  const selectorJson = JSON.stringify(selector);
+  const patchJson = JSON.stringify(patch || {});
+  return `
+    (function () {
+      var id = __REQUEST_ID__;
+      var selector = ${selectorJson};
+      var patch = ${patchJson};
+      var el = null;
+      try {
+        el = document.querySelector(selector);
+      } catch (e) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          source: 'ysclaude-webview',
+          id: id,
+          ok: false,
+          error: '选择器格式不正确: ' + e.message
+        }));
+        return true;
+      }
+      if (!el) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          source: 'ysclaude-webview',
+          id: id,
+          ok: false,
+          error: '未找到元素: ' + selector
+        }));
+        return true;
+      }
+      try {
+        function styleNameOf(key) {
+          return String(key).replace(/[A-Z]/g, function (letter) { return '-' + letter.toLowerCase(); });
+        }
+        if (typeof patch.text === 'string') el.textContent = patch.text;
+        if (typeof patch.html === 'string') el.innerHTML = patch.html;
+        if (patch.style && typeof patch.style === 'object') {
+          Object.keys(patch.style).forEach(function (key) {
+            var value = patch.style[key];
+            var styleName = styleNameOf(key);
+            if (value === null || value === undefined || value === '') {
+              el.style.removeProperty(styleName);
+            } else {
+              el.style.setProperty(styleName, String(value));
+            }
+          });
+        }
+        if (patch.attributes && typeof patch.attributes === 'object') {
+          Object.keys(patch.attributes).forEach(function (key) {
+            var value = patch.attributes[key];
+            if (value === null || value === undefined || value === false) {
+              el.removeAttribute(key);
+            } else {
+              el.setAttribute(key, value === true ? '' : String(value));
+            }
+          });
+        }
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          source: 'ysclaude-webview',
+          id: id,
+          ok: true,
+          data: {
+            html: '<!doctype html>\\n' + document.documentElement.outerHTML
+          }
+        }));
+      } catch (e) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          source: 'ysclaude-webview',
+          id: id,
+          ok: false,
+          error: e.message || '修改元素失败'
+        }));
+      }
+    })();
+    true;
+  `;
+}
+
 export function WebViewPanel() {
   colors = useThemeColors();
   styles = useMemo(() => createStyles(colors), [colors]);
@@ -537,8 +661,20 @@ export function WebViewPanel() {
   const urlRef = useRef('');
   const titleRef = useRef('');
   const userAgentRef = useRef<string | undefined>(undefined);
+  const sourceModeRef = useRef<WebViewSourceMode>('url');
+  const htmlArtifactRef = useRef<HtmlArtifactSession | null>(null);
+  const htmlArtifactDirtyRef = useRef(false);
+  const messagesRef = useRef(useChatStore.getState().messages);
+  const conversationIdRef = useRef(useChatStore.getState().conversationId);
+  const editMessage = useChatStore((state) => state.editMessage);
+  const conversationId = useChatStore((state) => state.conversationId);
+  const storeMessages = useChatStore((state) => state.messages);
   const [visible, setVisible] = useState(false);
   const [url, setUrl] = useState('');
+  const [sourceMode, setSourceMode] = useState<WebViewSourceMode>('url');
+  const [htmlSource, setHtmlSource] = useState('');
+  const [htmlArtifact, setHtmlArtifact] = useState<HtmlArtifactSession | null>(null);
+  const [htmlArtifactDirty, setHtmlArtifactDirty] = useState(false);
   const [addressInput, setAddressInput] = useState('');
   const [homeSearch, setHomeSearch] = useState('');
   const [title, setTitle] = useState('');
@@ -595,7 +731,7 @@ export function WebViewPanel() {
   const runScriptRequest = useCallback(
     <T,>(script: string): Promise<T> => {
       if (!visible || !urlRef.current) {
-        return Promise.reject(new Error('尚未打开网页'));
+        return Promise.reject(new Error(sourceModeRef.current === 'html-artifact' ? '尚未打开 HTML 预览' : '尚未打开网页'));
       }
 
       const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -732,6 +868,26 @@ export function WebViewPanel() {
   }, [insets.top]);
 
   useEffect(() => {
+    messagesRef.current = storeMessages;
+  }, [storeMessages]);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  useEffect(() => {
+    sourceModeRef.current = sourceMode;
+  }, [sourceMode]);
+
+  useEffect(() => {
+    htmlArtifactRef.current = htmlArtifact;
+  }, [htmlArtifact]);
+
+  useEffect(() => {
+    htmlArtifactDirtyRef.current = htmlArtifactDirty;
+  }, [htmlArtifactDirty]);
+
+  useEffect(() => {
     if (!showWebMenu) {
       setShowClearDataMenu(false);
     }
@@ -750,10 +906,10 @@ export function WebViewPanel() {
   }, []);
 
   const observe = useCallback(async (): Promise<WebViewObservation> => {
-    setStatus('观察网页');
+    setStatus(sourceModeRef.current === 'html-artifact' ? '观察 HTML' : '观察网页');
     return await runScriptRequest<WebViewObservation>(`
-      ${webViewUserAgent ? DESKTOP_LAYOUT_SCROLL_SCRIPT : ''}
-      ${LOGIN_OVERLAY_CLEANUP_SCRIPT}
+      ${sourceMode === 'url' && webViewUserAgent ? DESKTOP_LAYOUT_SCROLL_SCRIPT : ''}
+      ${sourceMode === 'url' ? LOGIN_OVERLAY_CLEANUP_SCRIPT : ''}
       (function () {
         var id = __REQUEST_ID__;
         function textOf(el) {
@@ -811,7 +967,7 @@ export function WebViewPanel() {
           ok: true,
           data: {
             title: document.title || '',
-            url: location.href,
+            url: ${sourceMode === 'html-artifact' ? JSON.stringify(HTML_ARTIFACT_URL) : 'location.href'},
             text: ((document.body && document.body.innerText) || '').slice(0, ${MAX_OBSERVE_TEXT}),
             viewport: {
               width: Math.round(window.innerWidth || 0),
@@ -823,7 +979,7 @@ export function WebViewPanel() {
       })();
       true;
     `);
-  }, [runScriptRequest, webViewUserAgent]);
+  }, [runScriptRequest, sourceMode, webViewUserAgent]);
 
   const isOpen = useCallback(() => {
     return visible && !!urlRef.current;
@@ -967,7 +1123,7 @@ export function WebViewPanel() {
       ? DESKTOP_WEBVIEW_USER_AGENT
       : undefined;
 
-    if (visible && urlRef.current === nextUrl && userAgentRef.current === nextUserAgent) {
+    if (visible && sourceModeRef.current === 'url' && urlRef.current === nextUrl && userAgentRef.current === nextUserAgent) {
       setCollapsed(false);
       setStatus('网页已打开，继续观察');
       return await observe();
@@ -975,6 +1131,12 @@ export function WebViewPanel() {
 
     setVisible(true);
     setCollapsed(false);
+    setSourceMode('url');
+    sourceModeRef.current = 'url';
+    setHtmlSource('');
+    setHtmlArtifact(null);
+    setHtmlArtifactDirty(false);
+    htmlArtifactDirtyRef.current = false;
     setLoading(true);
     setStatus('打开网页');
     setTitle('');
@@ -1004,9 +1166,226 @@ export function WebViewPanel() {
     });
   }, [observe, visible]);
 
+  const openHtmlArtifact = useCallback(async (
+    options: HtmlArtifactOpenOptions
+  ): Promise<WebViewObservation> => {
+    const html = buildHtmlArtifactDocument(options.html);
+    const session: HtmlArtifactSession = {
+      messageId: options.messageId,
+      htmlBlockIndex: options.htmlBlockIndex,
+      artifactId: options.artifactId,
+      artifactName: options.artifactName,
+      title: options.title || options.artifactName || (
+        options.htmlBlockIndex !== undefined ? `HTML #${options.htmlBlockIndex + 1}` : 'HTML 预览'
+      ),
+      originalHtml: options.html,
+    };
+
+    setVisible(true);
+    setCollapsed(false);
+    setSourceMode('html-artifact');
+    sourceModeRef.current = 'html-artifact';
+    setHtmlSource(html);
+    setHtmlArtifact(session);
+    htmlArtifactRef.current = session;
+    setHtmlArtifactDirty(false);
+    htmlArtifactDirtyRef.current = false;
+    setLoading(true);
+    setStatus('打开 HTML 预览');
+    setTitle(session.title);
+    titleRef.current = session.title;
+    setCanGoBack(false);
+    userAgentRef.current = undefined;
+    setWebViewUserAgent(undefined);
+    setShowBookmarks(false);
+    setShowWebMenu(false);
+    setShowClearDataMenu(false);
+    setShowAddressInput(false);
+    urlRef.current = HTML_ARTIFACT_URL;
+    setUrl(HTML_ARTIFACT_URL);
+    setAddressInput(HTML_ARTIFACT_URL);
+    setWebViewReloadKey((key) => key + 1);
+
+    return await new Promise<WebViewObservation>((resolve, reject) => {
+      if (pendingOpen.current) {
+        clearTimeout(pendingOpen.current.timeout);
+        pendingOpen.current.reject(new Error('新的 HTML 预览请求已开始'));
+      }
+      pendingOpen.current = {
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          pendingOpen.current = null;
+          setLoading(false);
+          reject(new Error('HTML 预览加载超时'));
+        }, OPEN_TIMEOUT_MS),
+      };
+    });
+  }, []);
+
+  const getHtmlArtifactSource = useCallback(async () => {
+    if (sourceModeRef.current !== 'html-artifact' || !htmlArtifactRef.current) {
+      throw new Error('当前没有打开 HTML artifact');
+    }
+    const result = await runScriptRequest<{ html: string }>(`
+      (function () {
+        var id = __REQUEST_ID__;
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          source: 'ysclaude-webview',
+          id: id,
+          ok: true,
+          data: {
+            html: '<!doctype html>\\n' + document.documentElement.outerHTML
+          }
+        }));
+      })();
+      true;
+    `);
+    return {
+      html: result.html || htmlSource,
+      info: {
+        messageId: htmlArtifactRef.current.messageId,
+        htmlBlockIndex: htmlArtifactRef.current.htmlBlockIndex,
+        artifactId: htmlArtifactRef.current.artifactId,
+        artifactName: htmlArtifactRef.current.artifactName,
+        title: htmlArtifactRef.current.title,
+        dirty: htmlArtifactDirtyRef.current,
+      },
+    };
+  }, [htmlSource, runScriptRequest]);
+
+  const replaceHtmlArtifactSource = useCallback(async (nextHtml: string): Promise<WebViewObservation> => {
+    if (sourceModeRef.current !== 'html-artifact' || !htmlArtifactRef.current) {
+      throw new Error('当前没有打开 HTML artifact');
+    }
+    const nextObservation = new Promise<WebViewObservation>((resolve, reject) => {
+      if (pendingOpen.current) {
+        clearTimeout(pendingOpen.current.timeout);
+        pendingOpen.current.reject(new Error('新的 HTML 更新请求已开始'));
+      }
+      pendingOpen.current = {
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          pendingOpen.current = null;
+          setLoading(false);
+          reject(new Error('HTML 更新加载超时'));
+        }, OPEN_TIMEOUT_MS),
+      };
+    });
+    setHtmlSource(buildHtmlArtifactDocument(nextHtml));
+    setHtmlArtifactDirty(true);
+    htmlArtifactDirtyRef.current = true;
+    setLoading(true);
+    setStatus('更新 HTML');
+    setWebViewReloadKey((key) => key + 1);
+    return await nextObservation;
+  }, []);
+
+  const patchHtmlArtifactElement = useCallback(async (
+    selector: string,
+    patch: HtmlArtifactPatch
+  ): Promise<WebViewObservation> => {
+    if (sourceModeRef.current !== 'html-artifact' || !htmlArtifactRef.current) {
+      throw new Error('当前没有打开 HTML artifact');
+    }
+    if (!selector.trim()) {
+      throw new Error('缺少有效 selector');
+    }
+    setStatus(`修改 ${selector}`);
+    const result = await runScriptRequest<{ html: string }>(buildPatchElementScript(selector.trim(), patch));
+    if (result.html) {
+      setHtmlSource(result.html);
+    }
+    setHtmlArtifactDirty(true);
+    htmlArtifactDirtyRef.current = true;
+    return await observe();
+  }, [observe, runScriptRequest]);
+
+  const saveHtmlArtifact = useCallback(async () => {
+    const session = htmlArtifactRef.current;
+    if (sourceModeRef.current !== 'html-artifact' || !session) {
+      throw new Error('当前没有打开 HTML artifact');
+    }
+    const source = await getHtmlArtifactSource();
+    if (session.artifactId) {
+      const scopedConversationId = conversationIdRef.current;
+      if (!scopedConversationId) {
+        throw new Error('当前没有可保存文件的对话窗口');
+      }
+      await replaceConversationArtifactContent({
+        conversationId: scopedConversationId,
+        artifactId: session.artifactId,
+        content: source.html.trim(),
+        createdBy: 'assistant',
+      });
+      setHtmlArtifactDirty(false);
+      htmlArtifactDirtyRef.current = false;
+      setStatus('HTML 已保存到当前对话文件');
+      return {
+        artifactId: session.artifactId,
+      };
+    }
+    if (!session.messageId || session.htmlBlockIndex === undefined) {
+      throw new Error('缺少原消息信息，无法保存 HTML');
+    }
+    const targetMessage = messagesRef.current.find((item) => item.id === session.messageId);
+    if (!targetMessage) {
+      throw new Error('找不到原消息，无法保存 HTML');
+    }
+    const nextContent = replaceMarkdownHtmlCodeBlock(
+      targetMessage.content,
+      session.htmlBlockIndex,
+      source.html.trim()
+    );
+    if (nextContent === null) {
+      throw new Error('找不到原 HTML 代码块，无法保存');
+    }
+    await editMessage(session.messageId, nextContent);
+    setHtmlArtifactDirty(false);
+    htmlArtifactDirtyRef.current = false;
+    setStatus('HTML 已保存到聊天消息');
+    return {
+      messageId: session.messageId,
+      htmlBlockIndex: session.htmlBlockIndex,
+    };
+  }, [editMessage, getHtmlArtifactSource]);
+
   useEffect(() => {
-    return registerWebViewHost({ show, isOpen, observeIfOpen, open, observe, tap, clickElement, clickSelector, wait, screenshot });
-  }, [clickElement, clickSelector, isOpen, observe, observeIfOpen, open, show, tap, wait, screenshot]);
+    return registerWebViewHost({
+      show,
+      isOpen,
+      observeIfOpen,
+      open,
+      openHtmlArtifact,
+      observe,
+      tap,
+      clickElement,
+      clickSelector,
+      wait,
+      screenshot,
+      getHtmlArtifactSource,
+      replaceHtmlArtifactSource,
+      patchHtmlArtifactElement,
+      saveHtmlArtifact,
+    });
+  }, [
+    clickElement,
+    clickSelector,
+    getHtmlArtifactSource,
+    isOpen,
+    observe,
+    observeIfOpen,
+    open,
+    openHtmlArtifact,
+    patchHtmlArtifactElement,
+    replaceHtmlArtifactSource,
+    saveHtmlArtifact,
+    show,
+    tap,
+    wait,
+    screenshot,
+  ]);
 
   useEffect(() => {
     urlRef.current = url;
@@ -1014,8 +1393,10 @@ export function WebViewPanel() {
 
   const handleLoadEnd = async () => {
     setLoading(false);
-    setStatus('网页已打开');
-    injectPageAdjustments();
+    setStatus(sourceModeRef.current === 'html-artifact' ? 'HTML 已打开' : '网页已打开');
+    if (sourceModeRef.current === 'url') {
+      injectPageAdjustments();
+    }
     if (pendingOpen.current) {
       const pending = pendingOpen.current;
       pendingOpen.current = null;
@@ -1031,6 +1412,10 @@ export function WebViewPanel() {
   };
 
   const handleNavigationStateChange = (navState: any) => {
+    if (sourceModeRef.current === 'html-artifact') {
+      setCanGoBack(!!navState.canGoBack);
+      return;
+    }
     const nextTitle = navState.title || '';
     const nextUrl = navState.url || urlRef.current;
     titleRef.current = nextTitle;
@@ -1045,6 +1430,10 @@ export function WebViewPanel() {
     const requestUrl = typeof request?.url === 'string' ? request.url : '';
     if (!requestUrl || requestUrl === 'about:blank') {
       return true;
+    }
+
+    if (sourceModeRef.current === 'html-artifact') {
+      return requestUrl.startsWith('about:blank') || requestUrl.startsWith(HTML_ARTIFACT_URL);
     }
 
     if (shouldOpenGoogleAuthExternally(requestUrl)) {
@@ -1086,6 +1475,12 @@ export function WebViewPanel() {
   };
 
   const openUrl = (nextUrl: string, nextTitle = '') => {
+    setSourceMode('url');
+    sourceModeRef.current = 'url';
+    setHtmlSource('');
+    setHtmlArtifact(null);
+    setHtmlArtifactDirty(false);
+    htmlArtifactDirtyRef.current = false;
     urlRef.current = nextUrl;
     setUrl(nextUrl);
     setAddressInput(nextUrl);
@@ -1135,7 +1530,7 @@ export function WebViewPanel() {
     if (!urlRef.current) return;
     setShowWebMenu(false);
     setLoading(true);
-    setStatus('刷新网页');
+    setStatus(sourceMode === 'html-artifact' ? '刷新 HTML' : '刷新网页');
     webViewRef.current?.reload();
   };
 
@@ -1173,6 +1568,11 @@ export function WebViewPanel() {
   };
 
   const toggleUserAgent = () => {
+    if (sourceMode === 'html-artifact') {
+      setShowWebMenu(false);
+      setStatus('HTML 预览不需要切换 UA');
+      return;
+    }
     const nextUserAgent = webViewUserAgent ? undefined : DESKTOP_WEBVIEW_USER_AGENT;
     userAgentRef.current = nextUserAgent;
     setWebViewUserAgent(nextUserAgent);
@@ -1204,6 +1604,12 @@ export function WebViewPanel() {
   const handleClose = () => {
     setVisible(false);
     setCollapsed(false);
+    setSourceMode('url');
+    sourceModeRef.current = 'url';
+    setHtmlSource('');
+    setHtmlArtifact(null);
+    setHtmlArtifactDirty(false);
+    htmlArtifactDirtyRef.current = false;
     urlRef.current = '';
     titleRef.current = '';
     setUrl('');
@@ -1240,7 +1646,7 @@ export function WebViewPanel() {
 
   const toggleBookmark = async () => {
     const currentUrl = urlRef.current;
-    if (!currentUrl) {
+    if (!currentUrl || sourceMode === 'html-artifact') {
       setStatus('先打开网页再收藏');
       setShowWebMenu(false);
       return;
@@ -1268,9 +1674,19 @@ export function WebViewPanel() {
     setShowWebMenu(false);
   };
 
+  const handleSaveHtmlArtifact = async () => {
+    try {
+      await saveHtmlArtifact();
+      setShowWebMenu(false);
+    } catch (err: any) {
+      setStatus(err?.message || 'HTML 保存失败');
+    }
+  };
+
   if (!visible) return null;
 
-  const isCurrentBookmarked = !!url && bookmarks.some((bookmark) => bookmark.url === url);
+  const artifactMode = sourceMode === 'html-artifact';
+  const isCurrentBookmarked = !artifactMode && !!url && bookmarks.some((bookmark) => bookmark.url === url);
   const expandedPanelStyle = [
     styles.panel,
     {
@@ -1289,7 +1705,7 @@ export function WebViewPanel() {
         },
       ]
     : expandedPanelStyle;
-  const displayHostname = getDisplayHostname(url);
+  const displayHostname = artifactMode ? 'HTML Artifact' : getDisplayHostname(url);
   const displayTitle = title || displayHostname || '网页交互';
 
   return (
@@ -1364,46 +1780,58 @@ export function WebViewPanel() {
             <Text style={styles.webMenuText}>输入网址</Text>
           </Pressable>
           <Pressable
-            style={[styles.webMenuItem, !url && styles.webMenuItemDisabled]}
+            style={[styles.webMenuItem, (!url || artifactMode) && styles.webMenuItemDisabled]}
             onPress={toggleBookmark}
-            disabled={!url}
+            disabled={!url || artifactMode}
           >
-            <Text style={[styles.webMenuText, !url && styles.webMenuTextDisabled]}>
+            <Text style={[styles.webMenuText, (!url || artifactMode) && styles.webMenuTextDisabled]}>
               {isCurrentBookmarked ? '取消收藏' : '收藏网页'}
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.webMenuItem, !url && styles.webMenuItemDisabled]}
+            style={[styles.webMenuItem, (!url || artifactMode) && styles.webMenuItemDisabled]}
             onPress={handleTranslateCurrentPage}
-            disabled={!url}
+            disabled={!url || artifactMode}
           >
-            <Text style={[styles.webMenuText, !url && styles.webMenuTextDisabled]}>翻译当前页</Text>
+            <Text style={[styles.webMenuText, (!url || artifactMode) && styles.webMenuTextDisabled]}>翻译当前页</Text>
           </Pressable>
           <Pressable style={styles.webMenuItem} onPress={toggleUserAgent}>
-            <Text style={styles.webMenuText}>{webViewUserAgent ? '切换移动端 UA' : '切换网页端 UA'}</Text>
+            <Text style={styles.webMenuText}>{artifactMode ? 'HTML 预览模式' : webViewUserAgent ? '切换移动端 UA' : '切换网页端 UA'}</Text>
           </Pressable>
+          {artifactMode && (
+            <Pressable
+              style={[styles.webMenuItem, !htmlArtifactDirty && styles.webMenuItemDisabled]}
+              onPress={handleSaveHtmlArtifact}
+              disabled={!htmlArtifactDirty}
+            >
+              <Text style={[styles.webMenuText, !htmlArtifactDirty && styles.webMenuTextDisabled]}>
+                保存 HTML
+              </Text>
+            </Pressable>
+          )}
           <Pressable
             style={[styles.webMenuItem, showBookmarks && styles.webMenuItemActive]}
             onPress={() => {
               setShowBookmarks((current) => !current);
               setShowWebMenu(false);
             }}
+            disabled={artifactMode}
           >
-            <Text style={styles.webMenuText}>收藏夹</Text>
+            <Text style={[styles.webMenuText, artifactMode && styles.webMenuTextDisabled]}>收藏夹</Text>
           </Pressable>
           <Pressable
             style={[
               styles.webMenuItem,
               showClearDataMenu && styles.webMenuItemActive,
-              !url && styles.webMenuItemDisabled,
+              (!url || artifactMode) && styles.webMenuItemDisabled,
             ]}
             onPress={() => {
               setShowBookmarks(false);
               setShowClearDataMenu((current) => !current);
             }}
-            disabled={!url}
+            disabled={!url || artifactMode}
           >
-            <Text style={[styles.webMenuText, !url && styles.webMenuTextDisabled]}>清除浏览数据</Text>
+            <Text style={[styles.webMenuText, (!url || artifactMode) && styles.webMenuTextDisabled]}>清除浏览数据</Text>
           </Pressable>
           {showClearDataMenu && (
             <View style={styles.clearDataOptions}>
@@ -1459,10 +1887,10 @@ export function WebViewPanel() {
           <WebView
             key={webViewReloadKey}
             ref={webViewRef}
-            source={{ uri: url }}
+            source={artifactMode ? { html: htmlSource, baseUrl: HTML_ARTIFACT_URL } : { uri: url }}
             style={styles.webview}
             javaScriptEnabled
-            domStorageEnabled
+            domStorageEnabled={!artifactMode}
             userAgent={webViewUserAgent}
             scrollEnabled
             nestedScrollEnabled
@@ -1478,7 +1906,7 @@ export function WebViewPanel() {
             onMessage={handleMessage}
             onNavigationStateChange={handleNavigationStateChange}
             onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
-            injectedJavaScript={`${webViewUserAgent ? DESKTOP_LAYOUT_SCROLL_SCRIPT : ''}\n${LOGIN_OVERLAY_CLEANUP_SCRIPT}`}
+            injectedJavaScript={artifactMode ? 'true;' : `${webViewUserAgent ? DESKTOP_LAYOUT_SCROLL_SCRIPT : ''}\n${LOGIN_OVERLAY_CLEANUP_SCRIPT}`}
             setSupportMultipleWindows={false}
           />
         </View>

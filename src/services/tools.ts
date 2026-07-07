@@ -1,4 +1,5 @@
 import { hotboardTool } from './toolModules/hotboard';
+import { conversationArtifactsTool } from './toolModules/conversationArtifacts';
 import { mcpRemoteTool } from './toolModules/mcpRemote';
 import { memoryVaultTool, uploadDiary } from './toolModules/memoryVault';
 import { nativeDeviceTool } from './toolModules/nativeDevice';
@@ -23,6 +24,7 @@ const TOOL_MODULES: ToolModule[] = [
   runCommandTool,
   mcpRemoteTool,
   webViewTool,
+  conversationArtifactsTool,
   nativeDeviceTool,
 ];
 

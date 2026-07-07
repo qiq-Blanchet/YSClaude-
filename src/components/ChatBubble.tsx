@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Image, Alert, TextInput, Modal, Dimensions, ScrollView, ActivityIndicator, type ImageStyle, type TextStyle } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Image, Alert, TextInput, Modal, Dimensions, ScrollView, ActivityIndicator, type ImageStyle, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { NativeViewGestureHandler, ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import Markdown from '@ronradtke/react-native-markdown-display';
 import { BlurView } from 'expo-blur';
+import Svg, { Path } from 'react-native-svg';
 import { Message, type GeneratedPicture, type ToolInvocation } from '../types';
 import { lightColors, useThemeColors, type ThemeColors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
@@ -31,6 +32,11 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const IMAGE_MAX_WIDTH = SCREEN_WIDTH * 0.65;
 const LINK_CARD_MAX_WIDTH = SCREEN_WIDTH * 0.68;
 const MESSAGE_AVATAR_SIZE = 36;
+
+type TailSvgStyle = ViewStyle & TextStyle & {
+  svgPath?: string;
+  svgViewBox?: string;
+};
 
 function numberOrDefault(value: number | undefined, fallback: number, min: number, max: number) {
   if (!Number.isFinite(value)) return fallback;
@@ -71,6 +77,65 @@ function withoutFontWeight(style?: TextStyle): TextStyle | undefined {
   return rest;
 }
 
+function getSvgTailFill(style: StyleProp<TailSvgStyle>, fallbackColor: string): string {
+  const flatStyle = StyleSheet.flatten(style);
+  const color = typeof flatStyle?.color === 'string' ? flatStyle.color : undefined;
+  const backgroundColor = typeof flatStyle?.backgroundColor === 'string' ? flatStyle.backgroundColor : undefined;
+  return color || backgroundColor || fallbackColor;
+}
+
+function getSvgTailStyle(style: StyleProp<TailSvgStyle>): ViewStyle | undefined {
+  const flatStyle = StyleSheet.flatten(style);
+  if (!flatStyle) return undefined;
+  const {
+    color: _color,
+    backgroundColor: _backgroundColor,
+    svgPath: _svgPath,
+    svgViewBox: _svgViewBox,
+    ...viewStyle
+  } = flatStyle;
+  return viewStyle;
+}
+
+function getSvgTailPath(style: StyleProp<TailSvgStyle>, side: 'user' | 'assistant'): string {
+  const flatStyle = StyleSheet.flatten(style);
+  if (typeof flatStyle?.svgPath === 'string' && flatStyle.svgPath.trim()) {
+    return flatStyle.svgPath.trim();
+  }
+
+  return side === 'user'
+    ? 'M0 0 C1.8 6.2 6.4 10.8 14.6 11.6 C11.5 13.1 11.4 16.9 17.4 20 C8.2 19.4 1.8 13.7 0 5.2 Z'
+    : 'M18 0 C16.2 6.2 11.6 10.8 3.4 11.6 C6.5 13.1 6.6 16.9 0.6 20 C9.8 19.4 16.2 13.7 18 5.2 Z';
+}
+
+function getSvgTailViewBox(style: StyleProp<TailSvgStyle>): string {
+  const flatStyle = StyleSheet.flatten(style);
+  return typeof flatStyle?.svgViewBox === 'string' && flatStyle.svgViewBox.trim()
+    ? flatStyle.svgViewBox.trim()
+    : '0 0 18 20';
+}
+
+function BubbleTailSvg({
+  side,
+  style,
+  fallbackColor,
+}: {
+  side: 'user' | 'assistant';
+  style: StyleProp<TailSvgStyle>;
+  fallbackColor: string;
+}) {
+  const fill = getSvgTailFill(style, fallbackColor);
+  const svgStyle = getSvgTailStyle(style);
+  const path = getSvgTailPath(style, side);
+  const viewBox = getSvgTailViewBox(style);
+
+  return (
+    <Svg pointerEvents="none" viewBox={viewBox} preserveAspectRatio="none" style={svgStyle}>
+      <Path d={path} fill={fill} />
+    </Svg>
+  );
+}
+
 function MarkdownTable({
   children,
   markdownStyles,
@@ -103,28 +168,52 @@ function MarkdownTable({
   );
 }
 
-const markdownRules = {
-  table: (node: any, children: React.ReactNode, _parent: any, styles: any) => (
-    <MarkdownTable key={node.key} markdownStyles={styles}>{children}</MarkdownTable>
-  ),
-  fence: (node: any, _children: React.ReactNode, _parent: any, styles: any, inheritedStyles: any = {}) => (
-    <MarkdownCodeBlock
-      key={node.key}
-      content={node.content || ''}
-      language={node.sourceInfo}
-      inheritedStyle={inheritedStyles}
-      codeStyle={styles.code_block}
-    />
-  ),
-  code_block: (node: any, _children: React.ReactNode, _parent: any, styles: any, inheritedStyles: any = {}) => (
-    <MarkdownCodeBlock
-      key={node.key}
-      content={node.content || ''}
-      inheritedStyle={inheritedStyles}
-      codeStyle={styles.code_block}
-    />
-  ),
-};
+function getMarkdownLanguageLabel(language?: string): string {
+  return (language || '').trim().split(/\s+/)[0]?.toLowerCase() || '';
+}
+
+function isMarkdownHtmlLanguage(language?: string): boolean {
+  const label = getMarkdownLanguageLabel(language);
+  return label === 'html' || label === 'htm' || label === 'xhtml';
+}
+
+function createMarkdownRules(options?: { messageId?: string }) {
+  let htmlBlockIndex = 0;
+
+  function nextHtmlBlockIndex(language?: string): number | undefined {
+    if (!isMarkdownHtmlLanguage(language)) return undefined;
+    const index = htmlBlockIndex;
+    htmlBlockIndex += 1;
+    return index;
+  }
+
+  return {
+    table: (node: any, children: React.ReactNode, _parent: any, styles: any) => (
+      <MarkdownTable key={node.key} markdownStyles={styles}>{children}</MarkdownTable>
+    ),
+    fence: (node: any, _children: React.ReactNode, _parent: any, styles: any, inheritedStyles: any = {}) => (
+      <MarkdownCodeBlock
+        key={node.key}
+        content={node.content || ''}
+        language={node.sourceInfo}
+        inheritedStyle={inheritedStyles}
+        codeStyle={styles.code_block}
+        messageId={options?.messageId}
+        htmlBlockIndex={nextHtmlBlockIndex(node.sourceInfo)}
+      />
+    ),
+    code_block: (node: any, _children: React.ReactNode, _parent: any, styles: any, inheritedStyles: any = {}) => (
+      <MarkdownCodeBlock
+        key={node.key}
+        content={node.content || ''}
+        inheritedStyle={inheritedStyles}
+        codeStyle={styles.code_block}
+        messageId={options?.messageId}
+        htmlBlockIndex={nextHtmlBlockIndex(node.sourceInfo)}
+      />
+    ),
+  };
+}
 
 const chatIcons = [
   require('../../assets/chat1.png'),
@@ -144,6 +233,7 @@ interface Props {
   floorNumber?: number;
   showFloorNumber?: boolean;
   showAvatarHeader?: boolean;
+  showBubbleTail?: boolean;
   onBubblePress?: () => void;
 }
 
@@ -177,6 +267,7 @@ function formatDebugJson(raw: string): string {
 // 思维链胶囊：白底灰边圆角，左侧 clock 图标 + "Thought process"，点击展开/收起内容。
 function ThinkingBlock({ thinking }: { thinking: string }) {
   const [expanded, setExpanded] = useState(false);
+  const thinkingRules = createMarkdownRules();
   return (
     <View style={styles.thinkingWrap}>
       <Pressable style={styles.thinkingPill} onPress={() => setExpanded((v) => !v)}>
@@ -189,7 +280,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
       </Pressable>
       {expanded && (
         <View style={styles.thinkingContent}>
-          <Markdown style={thinkingMarkdownStyles} rules={markdownRules}>{thinking}</Markdown>
+          <Markdown style={thinkingMarkdownStyles} rules={thinkingRules}>{thinking}</Markdown>
         </View>
       )}
     </View>
@@ -566,6 +657,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   floorNumber,
   showFloorNumber,
   showAvatarHeader = true,
+  showBubbleTail = true,
   onBubblePress,
 }: Props) {
   colors = useThemeColors();
@@ -604,6 +696,10 @@ export const ChatBubble = React.memo(function ChatBubble({
     () => withoutAppearanceGlassProps(cssStyle('.user-bubble-tail', '.chat-user-bubble-tail')),
     [customCssStyles]
   );
+  const userBubbleTailSvgCssStyle = useMemo(
+    () => withoutAppearanceGlassProps(cssStyle('.user-bubble-tail-svg', '.chat-user-bubble-tail-svg')),
+    [customCssStyles]
+  );
   const assistantBubbleCssStyle = useMemo(
     () => ({
       ...(customCssStyles.assistantBubble || {}),
@@ -613,6 +709,10 @@ export const ChatBubble = React.memo(function ChatBubble({
   );
   const assistantBubbleTailCssStyle = useMemo(
     () => withoutAppearanceGlassProps(cssStyle('.assistant-bubble-tail', '.chat-assistant-bubble-tail')),
+    [customCssStyles]
+  );
+  const assistantBubbleTailSvgCssStyle = useMemo(
+    () => withoutAppearanceGlassProps(cssStyle('.assistant-bubble-tail-svg', '.chat-assistant-bubble-tail-svg')),
     [customCssStyles]
   );
   const userBubbleGlass = useMemo(() => getAppearanceGlassConfig(userBubbleCssStyle), [userBubbleCssStyle]);
@@ -769,6 +869,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const [expandedTools, setExpandedTools] = useState<Record<number, boolean>>({});
   const bubbleRef = useRef<View>(null);
+  const markdownRules = createMarkdownRules({ messageId: message.id });
   const floorText = floorNumber !== undefined ? `#${floorNumber}` : null;
   const canToggleFloorHidden = floorNumber !== undefined;
   const hiddenToggleText = isHidden ? '恢复' : '隐藏';
@@ -984,6 +1085,7 @@ export const ChatBubble = React.memo(function ChatBubble({
     const menuTop = Math.max(8, menuAnchor.y - MENU_HEIGHT - 8);
     const userBubbleMaxWidth = Math.round(messageAvailableWidth * (userBubbleWidthPercent / 100));
     const expandUserMarkdownBlockBubble = shouldExpandMarkdownBlockBubble(message.content);
+    const userStickerOnlyMessage = messageIsStickerOnly && !dailyPaperCard && !sharedLinkUrl;
     const userBubbleBaseStyle = [
       styles.userBubble,
       {
@@ -996,13 +1098,21 @@ export const ChatBubble = React.memo(function ChatBubble({
       },
       messageHasSticker && styles.userBubbleWithSticker,
       withoutAppearanceGlassProps(userBubbleCssStyle),
-      messageIsStickerOnly && styles.userStickerOnlyBubble,
     ];
+    const userContentPressableStyle = userStickerOnlyMessage
+      ? styles.userStickerOnlyMessage
+      : userBubbleBaseStyle;
     const userBubbleTailStyle = [
       styles.bubbleTail,
       styles.userBubbleTail,
       { borderLeftColor: userBubbleTransparent ? 'transparent' : userBubbleColor },
       userBubbleTailCssStyle,
+    ];
+    const userBubbleTailSvgStyle = [
+      styles.bubbleTailSvg,
+      styles.userBubbleTailSvg,
+      { color: userBubbleTransparent ? 'transparent' : userBubbleColor },
+      userBubbleTailSvgCssStyle,
     ];
 
     const userColumnNode = (
@@ -1051,9 +1161,9 @@ export const ChatBubble = React.memo(function ChatBubble({
               ref={bubbleRef}
               onPress={dailyPaperCard ? () => setDailyPaperVisible(true) : sharedLinkUrl ? openSharedLinkCard : onBubblePress}
               onLongPress={handleUserLongPress}
-              style={userBubbleBaseStyle}
+              style={userContentPressableStyle}
             >
-              {userBubbleGlass.enabled && (
+              {!userStickerOnlyMessage && userBubbleGlass.enabled && (
                 <BlurView
                   pointerEvents="none"
                   intensity={userBubbleGlass.intensity}
@@ -1061,7 +1171,10 @@ export const ChatBubble = React.memo(function ChatBubble({
                   style={StyleSheet.absoluteFill}
                 />
               )}
-              <View pointerEvents="none" style={userBubbleTailStyle} />
+              {!userStickerOnlyMessage && <View pointerEvents="none" style={userBubbleTailStyle} />}
+              {showBubbleTail && !userStickerOnlyMessage && (
+                <BubbleTailSvg side="user" style={userBubbleTailSvgStyle} fallbackColor={userBubbleTransparent ? 'transparent' : userBubbleColor} />
+              )}
               {dailyPaperCard ? (
                 <DailyPaperForwardCard paper={dailyPaperCard} />
               ) : sharedLinkUrl ? (
@@ -1152,6 +1265,10 @@ export const ChatBubble = React.memo(function ChatBubble({
   const assistantBubbleFlowParts = assistantBubbleStyle === 'bubble'
     ? buildAssistantBubbleFlowParts(assistantFlowParts, messageStickers)
     : assistantFlowParts;
+  const lastAssistantBubblePartIndex = assistantBubbleFlowParts.reduce(
+    (lastIndex, part, partIndex) => part.type === 'text' ? partIndex : lastIndex,
+    -1
+  );
   const remoteActivityCardVisible = isRemoteActivityMessage(message);
 
   function handleAction(index: number) {
@@ -1314,6 +1431,12 @@ export const ChatBubble = React.memo(function ChatBubble({
     { borderRightColor: assistantBubbleTransparent ? 'transparent' : assistantBubbleColor },
     assistantBubbleTailCssStyle,
   ];
+  const assistantBubbleTailSvgStyle = [
+    styles.bubbleTailSvg,
+    styles.assistantBubbleTailSvg,
+    { color: assistantBubbleTransparent ? 'transparent' : assistantBubbleColor },
+    assistantBubbleTailSvgCssStyle,
+  ];
   const assistantContentStyle = [
     styles.assistantContent,
     sideAvatarsVisible && styles.assistantSideContent,
@@ -1384,14 +1507,20 @@ export const ChatBubble = React.memo(function ChatBubble({
           />
         )
       ) : assistantBubbleEnabled ? (
-        <View style={styles.assistantBubbleStack}>
-          {assistantBubbleFlowParts.length > 0 ? assistantBubbleFlowParts.map((part) => {
+        <View
+          style={[
+            styles.assistantBubbleStack,
+            cssStyle('.assistant-bubble-stack', '.chat-assistant-bubble-stack'),
+          ]}
+        >
+          {assistantBubbleFlowParts.length > 0 ? assistantBubbleFlowParts.map((part, partIndex) => {
             if (part.type === 'tool') {
               return renderToolInvocation(part.invocation, part.invocationIndex);
             }
 
             const pictureCount = countPicTokens(part.content);
             const stickerOnlyPart = isStickerOnlyContent(part.content, messageStickers);
+            const partShowsBubbleTail = showBubbleTail && partIndex === lastAssistantBubblePartIndex;
             const bubbleNode = (
               <Pressable
                 key={sideAvatarsVisible ? undefined : part.key}
@@ -1407,7 +1536,10 @@ export const ChatBubble = React.memo(function ChatBubble({
                     style={StyleSheet.absoluteFill}
                   />
                 )}
-                <View pointerEvents="none" style={assistantBubbleTailStyle} />
+                {!stickerOnlyPart && <View pointerEvents="none" style={assistantBubbleTailStyle} />}
+                {partShowsBubbleTail && !stickerOnlyPart && (
+                  <BubbleTailSvg side="assistant" style={assistantBubbleTailSvgStyle} fallbackColor={assistantBubbleTransparent ? 'transparent' : assistantBubbleColor} />
+                )}
                 <StickerContent
                   content={part.content}
                   variant="assistant"
@@ -1438,6 +1570,9 @@ export const ChatBubble = React.memo(function ChatBubble({
                   />
                 )}
                 <View pointerEvents="none" style={assistantBubbleTailStyle} />
+                {showBubbleTail && (
+                  <BubbleTailSvg side="assistant" style={assistantBubbleTailSvgStyle} fallbackColor={assistantBubbleTransparent ? 'transparent' : assistantBubbleColor} />
+                )}
                 <StickerContent
                   content=" "
                   variant="assistant"
@@ -1908,7 +2043,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute',
     width: 0,
     height: 0,
-    zIndex: 1,
   },
   userBubbleTail: {
     right: -6,
@@ -1929,6 +2063,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
     borderRightColor: colors.userBubble,
+  },
+  bubbleTailSvg: {
+    display: 'none',
+    position: 'absolute',
+    width: 18,
+    height: 20,
+  },
+  userBubbleTailSvg: {
+    right: -10,
+    bottom: -2,
+    color: colors.userBubble,
+  },
+  assistantBubbleTailSvg: {
+    left: -10,
+    bottom: -2,
+    color: colors.userBubble,
   },
   sharedLinkCard: {
     width: Math.min(300, LINK_CARD_MAX_WIDTH),
@@ -2049,6 +2199,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.textSecondary,
   },
   userStickerOnlyBubble: {
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    overflow: 'visible',
+  },
+  userStickerOnlyMessage: {
+    alignSelf: 'flex-end',
+    minWidth: 0,
     backgroundColor: 'transparent',
     borderRadius: 0,
     paddingVertical: 0,

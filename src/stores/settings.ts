@@ -104,6 +104,16 @@ export interface WebInteractionConfig {
   maxToolCalls: number;
 }
 
+export interface HtmlArtifactToolConfig {
+  enabled: boolean;
+  maxToolCalls: number;
+}
+
+export interface ConversationArtifactToolConfig {
+  enabled: boolean;
+  maxToolCalls: number;
+}
+
 export interface HotboardConfig {
   enabled: boolean;
   apiKey: string;
@@ -628,6 +638,8 @@ interface SettingsState {
   memoryVaultConfig: MemoryVaultConfig;
   webSearchConfig: WebSearchConfig;
   webInteractionConfig: WebInteractionConfig;
+  conversationArtifactToolConfig: ConversationArtifactToolConfig;
+  htmlArtifactToolConfig: HtmlArtifactToolConfig;
   hotboardConfig: HotboardConfig;
   runCommandConfig: RunCommandConfig;
   qqBotConfig: QQBotConfig;
@@ -658,6 +670,8 @@ interface SettingsState {
   setMemoryVaultConfig: (config: Partial<MemoryVaultConfig>) => void;
   setWebSearchConfig: (config: Partial<WebSearchConfig>) => void;
   setWebInteractionConfig: (config: Partial<WebInteractionConfig>) => void;
+  setConversationArtifactToolConfig: (config: Partial<ConversationArtifactToolConfig>) => void;
+  setHtmlArtifactToolConfig: (config: Partial<HtmlArtifactToolConfig>) => void;
   setHotboardConfig: (config: Partial<HotboardConfig>) => void;
   setRunCommandConfig: (config: Partial<RunCommandConfig>) => void;
   setQqBotConfig: (config: Partial<QQBotConfig>) => void;
@@ -730,6 +744,14 @@ export const useSettingsStore = create<SettingsState>()(
         maxResults: 5,
       },
       webInteractionConfig: {
+        enabled: false,
+        maxToolCalls: 8,
+      },
+      conversationArtifactToolConfig: {
+        enabled: false,
+        maxToolCalls: 8,
+      },
+      htmlArtifactToolConfig: {
         enabled: false,
         maxToolCalls: 8,
       },
@@ -925,6 +947,10 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ webSearchConfig: { ...state.webSearchConfig, ...config } })),
       setWebInteractionConfig: (config) =>
         set((state) => ({ webInteractionConfig: { ...state.webInteractionConfig, ...config } })),
+      setConversationArtifactToolConfig: (config) =>
+        set((state) => ({ conversationArtifactToolConfig: { ...state.conversationArtifactToolConfig, ...config } })),
+      setHtmlArtifactToolConfig: (config) =>
+        set((state) => ({ htmlArtifactToolConfig: { ...state.htmlArtifactToolConfig, ...config } })),
       setHotboardConfig: (config) =>
         set((state) => ({ hotboardConfig: { ...state.hotboardConfig, ...config } })),
       setRunCommandConfig: (config) =>
@@ -1255,6 +1281,8 @@ export const useSettingsStore = create<SettingsState>()(
         memoryVaultConfig: state.memoryVaultConfig,
         webSearchConfig: state.webSearchConfig,
         webInteractionConfig: state.webInteractionConfig,
+        conversationArtifactToolConfig: state.conversationArtifactToolConfig,
+        htmlArtifactToolConfig: state.htmlArtifactToolConfig,
         hotboardConfig: state.hotboardConfig,
         runCommandConfig: state.runCommandConfig,
         qqBotConfig: state.qqBotConfig,
@@ -1275,6 +1303,12 @@ export const useSettingsStore = create<SettingsState>()(
       onRehydrateStorage: () => (state) => {
         useSettingsStore.setState({
           _hydrated: true,
+          conversationArtifactToolConfig:
+            state?.conversationArtifactToolConfig ||
+            state?.htmlArtifactToolConfig || {
+              enabled: false,
+              maxToolCalls: 8,
+            },
           stickerConfig: normalizeStickerConfig(state?.stickerConfig),
           floatingBallConfig: normalizeFloatingBallConfig(state?.floatingBallConfig),
           promptCacheConfig: normalizePromptCacheConfig(state?.promptCacheConfig),

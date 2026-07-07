@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +13,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { fonts } from '../theme/fonts';
 import { useThemeColors, type ThemeColors } from '../theme/colors';
+import { openHtmlArtifact } from '../services/webviewController';
 
 const COLLAPSED_LINE_COUNT = 14;
 const LONG_CODE_LINE_COUNT = 18;
@@ -72,6 +74,8 @@ interface Props {
   inheritedStyle?: TextStyle;
   codeStyle?: TextStyle;
   containerStyle?: any;
+  messageId?: string;
+  htmlBlockIndex?: number;
 }
 
 export function MarkdownCodeBlock({
@@ -80,6 +84,8 @@ export function MarkdownCodeBlock({
   inheritedStyle,
   codeStyle,
   containerStyle,
+  messageId,
+  htmlBlockIndex,
 }: Props) {
   const colors = useThemeColors();
   const dimensions = useWindowDimensions();
@@ -101,6 +107,24 @@ export function MarkdownCodeBlock({
     },
   ];
 
+  const handleRenderHtml = async () => {
+    if (!messageId || htmlBlockIndex === undefined) {
+      setPreviewVisible(true);
+      return;
+    }
+
+    try {
+      await openHtmlArtifact({
+        messageId,
+        htmlBlockIndex,
+        html: code,
+        title: `${languageLabel.toUpperCase()} 预览`,
+      });
+    } catch (err: any) {
+      Alert.alert('打开 HTML 失败', err?.message || '无法打开 HTML 预览');
+    }
+  };
+
   return (
     <View style={[styles.container, containerStyle]}>
       <View style={styles.header}>
@@ -114,7 +138,7 @@ export function MarkdownCodeBlock({
             </Pressable>
           )}
           {htmlBlock && (
-            <Pressable style={[styles.headerButton, styles.renderButton]} onPress={() => setPreviewVisible(true)}>
+            <Pressable style={[styles.headerButton, styles.renderButton]} onPress={handleRenderHtml}>
               <Text style={[styles.headerButtonText, styles.renderButtonText]}>渲染</Text>
             </Pressable>
           )}

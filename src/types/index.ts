@@ -66,6 +66,39 @@ export interface Conversation {
   hiddenMessageIds?: string[];
 }
 
+export type ConversationArtifactKind =
+  | 'text'
+  | 'markdown'
+  | 'html'
+  | 'css'
+  | 'javascript'
+  | 'typescript'
+  | 'json'
+  | 'csv';
+
+export interface ConversationArtifact {
+  id: string;
+  conversationId: string;
+  name: string;
+  mimeType: string;
+  kind: ConversationArtifactKind;
+  currentVersionId: string;
+  createdBy: 'user' | 'assistant';
+  createdAt: number;
+  updatedAt: number;
+  size: number;
+}
+
+export interface ConversationArtifactVersion {
+  id: string;
+  artifactId: string;
+  version: number;
+  content: string;
+  createdBy: 'user' | 'assistant';
+  createdAt: number;
+  size: number;
+}
+
 export interface Diary {
   id: string;
   title: string;

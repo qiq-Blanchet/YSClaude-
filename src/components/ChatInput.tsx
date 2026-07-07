@@ -87,6 +87,7 @@ interface Props {
   onSend: (text: string, imageUri?: string, imageGenerationReferenceUris?: string[]) => void | Promise<void>;
   onTriggerResponse: () => void | Promise<void>;
   onEnableWebCruise?: () => void | Promise<void>;
+  onAttachFile?: () => void | Promise<unknown>;
   disabled?: boolean;
   isStreaming?: boolean;
   onStop?: () => void;
@@ -97,6 +98,7 @@ export function ChatInput({
   onSend,
   onTriggerResponse,
   onEnableWebCruise,
+  onAttachFile,
   disabled,
   isStreaming,
   onStop,
@@ -232,6 +234,16 @@ export function ChatInput({
     if (disabled || isStreaming) return;
     setOptionsMenuVisible(false);
     await onEnableWebCruise?.();
+  };
+
+  const handleAttachFile = async () => {
+    if (disabled || isStreaming) return;
+    setOptionsMenuVisible(false);
+    try {
+      await onAttachFile?.();
+    } catch (error: any) {
+      Alert.alert('上传文件失败', error?.message || '无法读取所选文件');
+    }
   };
 
   const handleOpenMcpPanel = () => {
@@ -671,6 +683,10 @@ export function ChatInput({
             <View style={styles.optionDivider} />
             <Pressable style={styles.optionItem} onPress={() => void pickImageReferences()}>
               <Text style={styles.optionText}>生图参考图</Text>
+            </Pressable>
+            <View style={styles.optionDivider} />
+            <Pressable style={styles.optionItem} onPress={() => void handleAttachFile()}>
+              <Text style={styles.optionText}>文件</Text>
             </Pressable>
             <View style={styles.optionDivider} />
             <Pressable style={styles.optionItem} onPress={handleOpenCssEditor}>
