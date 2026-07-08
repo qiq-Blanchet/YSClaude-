@@ -44,6 +44,10 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Local-only audio assets
+assets/messagealert.mp3
+android/app/src/main/res/raw/messagealert.mp3
+
 # typescript
 *.tsbuildinfo
 

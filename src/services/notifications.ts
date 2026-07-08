@@ -26,7 +26,6 @@ function isAppBackgrounded(): boolean {
 }
 
 // ─── 初始化（handler + Android 渠道）──────────────────────────
-const NOTIFICATION_SOUND = 'messagealert.mp3';
 const CHANNEL_ID = 'chat-replies-message-alert-v2';
 let initialized = false;
 
@@ -55,7 +54,6 @@ export async function initNotifications(): Promise<void> {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: '聊天回复',
       importance: Notifications.AndroidImportance.HIGH,
-      sound: NOTIFICATION_SOUND,
       vibrationPattern: [0, 250, 250, 250],
     });
   }
@@ -130,7 +128,7 @@ export async function notifyReplyReady(
       content: {
         title: 'Claude在呼叫你……',
         body,
-        sound: NOTIFICATION_SOUND,
+        sound: true,
       },
       trigger: Platform.OS === 'android' ? { channelId: CHANNEL_ID } : null,
     });
