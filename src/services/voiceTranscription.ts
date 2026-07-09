@@ -1,3 +1,6 @@
+import { fetch as expoFetch } from 'expo/fetch';
+import { File } from 'expo-file-system';
+
 const DEFAULT_TRANSCRIPTION_MODEL = 'whisper-1';
 
 export interface TranscribeVoiceRequest {
@@ -56,19 +59,15 @@ async function transcribeOpenAI({
   const endpoint = `${baseUrl.trim().replace(/\/$/, '')}/audio/transcriptions`;
   const formData = new FormData();
   formData.append('model', model);
-  formData.append('file', {
-    uri,
-    name: fileName || `voice${extensionFromUri(uri)}`,
-    type: mimeType || mimeTypeFromUri(uri),
-  } as any);
+  await appendAudioFile(formData, 'file', uri, mimeType, fileName);
 
-  const response = await fetch(endpoint, {
+  const response = await expoFetch(endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey.trim()}`,
     },
-    body: formData,
-  });
+    body: formData as any,
+  }) as Response;
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -94,11 +93,7 @@ async function transcribeFishAudio({
 }: TranscribeVoiceRequest): Promise<string> {
   const endpoint = `${baseUrl.trim().replace(/\/$/, '')}/v1/asr`;
   const formData = new FormData();
-  formData.append('audio', {
-    uri,
-    name: fileName || `voice${extensionFromUri(uri)}`,
-    type: mimeType || mimeTypeFromUri(uri),
-  } as any);
+  await appendAudioFile(formData, 'audio', uri, mimeType, fileName);
 
   const normalizedLanguage = language.trim();
   if (normalizedLanguage) {
@@ -106,13 +101,13 @@ async function transcribeFishAudio({
   }
   formData.append('ignore_timestamps', ignoreTimestamps ? 'true' : 'false');
 
-  const response = await fetch(endpoint, {
+  const response = await expoFetch(endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey.trim()}`,
     },
-    body: formData,
-  });
+    body: formData as any,
+  }) as Response;
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -125,6 +120,23 @@ async function transcribeFishAudio({
     throw new Error('Fish Audio STT 未返回文字');
   }
   return text;
+}
+
+async function appendAudioFile(
+  formData: FormData,
+  fieldName: string,
+  uri: string,
+  mimeType?: string,
+  fileName?: string
+): Promise<void> {
+  const file = new File(uri);
+  const name = fileName || file.name || `voice${extensionFromUri(uri)}`;
+  const type = mimeType || mimeTypeFromUri(uri);
+  formData.append(fieldName, {
+    name,
+    type,
+    bytes: () => file.bytes(),
+  } as any);
 }
 
 export function mimeTypeFromUri(uri: string): string {
