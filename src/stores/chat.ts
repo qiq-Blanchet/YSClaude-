@@ -460,7 +460,12 @@ function buildVoiceToken(voiceId: string): string {
 
 function formatVoiceMessageForAi(content: string, voice?: VoiceAttachment): string {
   if (!voice) return content;
-  const lines = [content || buildVoiceToken(voice.id)];
+  const voiceToken = buildVoiceToken(voice.id);
+  const trimmedContent = content.trim();
+  if (trimmedContent && trimmedContent !== voiceToken) {
+    return content;
+  }
+  const lines = [content || voiceToken];
   if (voice.transcriptStatus === 'completed' && voice.transcript?.trim()) {
     lines.push(`转写文字：${voice.transcript.trim()}`);
   } else if (voice.transcriptStatus === 'failed') {
@@ -608,6 +613,7 @@ interface ChatState {
   clearPendingScrollMessage: () => void;
   setError: (error: string | null) => void;
   editMessage: (id: string, content: string) => Promise<void>;
+  editVoiceTranscript: (id: string, transcript: string) => Promise<void>;
   removeMessage: (id: string) => Promise<void>;
   removeToolInvocation: (messageId: string, invocationIndex: number) => Promise<void>;
   regenerateGeneratedPicture: (messageId: string, tokenIndex: number) => Promise<void>;
@@ -2987,6 +2993,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       messages: state.messages.map((m) =>
         m.id === id ? { ...m, content } : m
+      ),
+    }));
+  },
+
+  editVoiceTranscript: async (id: string, transcript: string) => {
+    const target = get().messages.find((m) => m.id === id);
+    const voice = target?.voiceAttachment;
+    if (!voice) return;
+    const nextVoice: VoiceAttachment = {
+      ...voice,
+      transcript: transcript.trim(),
+      transcriptStatus: 'completed',
+      errorMessage: undefined,
+      updatedAt: Date.now(),
+    };
+    await updateMessageVoiceAttachment(id, nextVoice);
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === id ? { ...m, voiceAttachment: nextVoice } : m
       ),
     }));
   },

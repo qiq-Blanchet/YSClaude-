@@ -5,7 +5,7 @@ import Markdown from '@ronradtke/react-native-markdown-display';
 import { BlurView } from 'expo-blur';
 import { createAudioPlayer, type AudioStatus } from 'expo-audio';
 import Svg, { Path } from 'react-native-svg';
-import { Message, type GeneratedPicture, type ToolInvocation } from '../types';
+import { Message, type GeneratedPicture, type ToolInvocation, type VoiceAttachment } from '../types';
 import { lightColors, useThemeColors, type ThemeColors } from '../theme/colors';
 import { fonts, fontWeights } from '../theme/fonts';
 import { useChatStore } from '../stores/chat';
@@ -76,6 +76,14 @@ function withoutFontWeight(style?: TextStyle): TextStyle | undefined {
   if (!flatStyle) return undefined;
   const { fontFamily: _fontFamily, fontWeight: _fontWeight, ...rest } = flatStyle;
   return rest;
+}
+
+function buildVoiceEditText(content: string, voice?: VoiceAttachment): string {
+  const voiceToken = voice ? `[Voice:${voice.id}]` : '';
+  const transcript = voice?.transcriptStatus === 'completed' ? voice.transcript?.trim() : '';
+  if (transcript) return transcript;
+  if (voiceToken && content.trim() === voiceToken) return '';
+  return content;
 }
 
 function getSvgTailFill(style: StyleProp<TailSvgStyle>, fallbackColor: string): string {
@@ -888,6 +896,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   const sharedLinkUrl = isUser ? getSingleHttpUrlMessage(message.content) : null;
   const dailyPaperCard = isUser ? parseDailyPaperCardMessage(message.content) : null;
   const editMessage = useChatStore((state) => state.editMessage);
+  const editVoiceTranscript = useChatStore((state) => state.editVoiceTranscript);
   const removeMessage = useChatStore((state) => state.removeMessage);
   const removeToolInvocation = useChatStore((state) => state.removeToolInvocation);
   const regenerateGeneratedPicture = useChatStore((state) => state.regenerateGeneratedPicture);
@@ -1046,7 +1055,7 @@ export const ChatBubble = React.memo(function ChatBubble({
   function openUserEdit() {
     setMenuVisible(false);
     setEditTargetId(message.id);
-    setEditText(message.content);
+    setEditText(buildVoiceEditText(message.content, message.voiceAttachment));
     setEditModalVisible(true);
   }
 
@@ -1432,7 +1441,7 @@ export const ChatBubble = React.memo(function ChatBubble({
       case 3: // 编辑用户消息
         if (userMsgBefore) {
           setEditTargetId(userMsgBefore.id);
-          setEditText(userMsgBefore.content);
+          setEditText(buildVoiceEditText(userMsgBefore.content, userMsgBefore.voiceAttachment));
           setEditModalVisible(true);
         }
         break;
@@ -1541,7 +1550,15 @@ export const ChatBubble = React.memo(function ChatBubble({
 
   function handleSaveEdit() {
     if (editTargetId && editText.trim()) {
-      editMessage(editTargetId, editText.trim());
+      const editTargetMessage =
+        editTargetId === message.id ? message :
+        editTargetId === userMsgBefore?.id ? userMsgBefore :
+        null;
+      if (editTargetMessage?.voiceAttachment) {
+        editVoiceTranscript(editTargetId, editText.trim());
+      } else {
+        editMessage(editTargetId, editText.trim());
+      }
     }
     setEditModalVisible(false);
     setEditTargetId(null);

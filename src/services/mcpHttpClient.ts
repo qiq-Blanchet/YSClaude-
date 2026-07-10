@@ -7,7 +7,7 @@ import type {
 } from '../stores/settings';
 
 const MCP_PROTOCOL_VERSION = '2025-06-18';
-const MCP_TIMEOUT_MS = 20000;
+const MCP_TIMEOUT_MS = 600000;
 
 interface McpJsonRpcError {
   code: number;
