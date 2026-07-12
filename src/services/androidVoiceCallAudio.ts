@@ -18,6 +18,10 @@ export interface VoiceCallBargeInEvent {
   sampleRate?: number;
 }
 
+export interface VoiceCallSpeechEndEvent {
+  sampleRate?: number;
+}
+
 interface VoiceCallAudioModule {
   startMic(sampleRate: number, chunkMs: number): Promise<boolean>;
   stopMic(): Promise<boolean>;
@@ -101,4 +105,10 @@ export function addVoiceCallBargeInListener(
   listener: (event: VoiceCallBargeInEvent) => void
 ) {
   return DeviceEventEmitter.addListener('VoiceCallBargeIn', listener);
+}
+
+export function addVoiceCallSpeechEndListener(
+  listener: (event: VoiceCallSpeechEndEvent) => void
+) {
+  return DeviceEventEmitter.addListener('VoiceCallSpeechEnd', listener);
 }

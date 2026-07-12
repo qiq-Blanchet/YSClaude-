@@ -47,8 +47,8 @@ class VoiceCallAudioModule(
     private const val BARGE_IN_RECOGNITION_OPEN_MS = 2_500L
     private const val MIC_PREROLL_MS = 520
     private const val MIC_START_MIN_SPEECH_MS = 60
-    private const val MIC_TRAILING_AUDIO_MS = 180
-    private const val MIC_END_SILENCE_MS = 520
+    private const val MIC_TRAILING_AUDIO_MS = 360
+    private const val MIC_END_SILENCE_MS = 460
     private const val MIC_INITIAL_NOISE_RMS = 260.0
     private const val MIC_MIN_START_RMS = 320.0
     private const val MIC_MIN_ACTIVE_RMS = 220.0
@@ -632,6 +632,7 @@ class VoiceCallAudioModule(
         micSpeechMs = 0
         micSilenceMs = 0
         micPreroll.clear()
+        emitSpeechEnd(sampleRate)
       }
       return
     }
@@ -676,6 +677,15 @@ class VoiceCallAudioModule(
       "VoiceCallAudioChunk",
       Arguments.createMap().apply {
         putString("base64", Base64.encodeToString(payload, Base64.NO_WRAP))
+        putInt("sampleRate", sampleRate)
+      }
+    )
+  }
+
+  private fun emitSpeechEnd(sampleRate: Int) {
+    sendEvent(
+      "VoiceCallSpeechEnd",
+      Arguments.createMap().apply {
         putInt("sampleRate", sampleRate)
       }
     )

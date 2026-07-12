@@ -6,6 +6,7 @@ import {
   addVoiceCallAudioChunkListener,
   addVoiceCallAudioErrorListener,
   addVoiceCallBargeInListener,
+  addVoiceCallSpeechEndListener,
   addVoiceCallPlaybackListener,
   clearVoiceCallSpeaker,
   enqueueVoiceCallMp3Clip,
@@ -51,6 +52,7 @@ const MINIMAX_SAMPLE_RATE = 32000;
 const PLAYBACK_RECOGNITION_SUPPRESS_MS = 900;
 const BARGE_IN_RECOGNITION_OPEN_MS = 2500;
 const PENDING_TRANSCRIPT_FLUSH_MS = 750;
+const LOCAL_SPEECH_END_FLUSH_MS = 260;
 const TTS_SEGMENT_BOUNDARY = /[。！？!?；;，,、\n]/;
 const MAX_TTS_SEGMENT_CHARS = 44;
 const MINIMAX_TASK_START_FALLBACK_MS = 350;
@@ -90,6 +92,7 @@ export class AndroidVoiceCallSession {
   private audioChunkSubscription: Subscription | null = null;
   private audioErrorSubscription: Subscription | null = null;
   private bargeInSubscription: Subscription | null = null;
+  private speechEndSubscription: Subscription | null = null;
   private playbackSubscription: Subscription | null = null;
   private chatSubscription: (() => void) | null = null;
   private deepgramWs: WebSocket | null = null;
@@ -178,6 +181,9 @@ export class AndroidVoiceCallSession {
     this.bargeInSubscription = addVoiceCallBargeInListener((event) => {
       this.handleBargeIn(event.chunks || []);
     });
+    this.speechEndSubscription = addVoiceCallSpeechEndListener(() => {
+      this.handleLocalSpeechEnd();
+    });
     this.playbackSubscription = addVoiceCallPlaybackListener((event) => {
       this.setAssistantPlaybackActive(!!event.active);
     });
@@ -218,10 +224,12 @@ export class AndroidVoiceCallSession {
     this.audioChunkSubscription?.remove();
     this.audioErrorSubscription?.remove();
     this.bargeInSubscription?.remove();
+    this.speechEndSubscription?.remove();
     this.playbackSubscription?.remove();
     this.audioChunkSubscription = null;
     this.audioErrorSubscription = null;
     this.bargeInSubscription = null;
+    this.speechEndSubscription = null;
     this.playbackSubscription = null;
     await stopVoiceCallAudio().catch(() => undefined);
     this.clearPendingTranscriptFlush();
@@ -374,7 +382,7 @@ export class AndroidVoiceCallSession {
     if (event.is_final) {
       this.finalTranscriptParts.push(transcript);
       this.lastInterimTranscript = '';
-      this.update({ partialTranscript: '' });
+      this.update({ partialTranscript: uniqueJoin(this.finalTranscriptParts) });
     } else {
       this.lastInterimTranscript = transcript;
       this.update({ partialTranscript: transcript });
@@ -398,14 +406,14 @@ export class AndroidVoiceCallSession {
     });
   }
 
-  private schedulePendingTranscriptFlush(): void {
+  private schedulePendingTranscriptFlush(delayMs = PENDING_TRANSCRIPT_FLUSH_MS): void {
     if (this.snapshot.status !== 'listening') return;
     this.clearPendingTranscriptFlush();
     this.pendingTranscriptFlushTimer = setTimeout(() => {
       this.pendingTranscriptFlushTimer = null;
       if (this.snapshot.status !== 'listening') return;
       this.flushFinalTranscript();
-    }, PENDING_TRANSCRIPT_FLUSH_MS);
+    }, delayMs);
   }
 
   private clearPendingTranscriptFlush(): void {
@@ -675,6 +683,12 @@ export class AndroidVoiceCallSession {
     }
   }
 
+  private handleLocalSpeechEnd(): void {
+    if (!this.snapshot.active || this.stopping || this.snapshot.status !== 'listening') return;
+    if (!this.finalTranscriptParts.length && !this.lastInterimTranscript && !this.snapshot.partialTranscript) return;
+    this.schedulePendingTranscriptFlush(LOCAL_SPEECH_END_FLUSH_MS);
+  }
+
   private interruptAssistant(): void {
     clearVoiceCallSpeaker().catch(() => undefined);
     this.closeMiniMax();
@@ -767,10 +781,12 @@ export class AndroidVoiceCallSession {
     this.audioChunkSubscription?.remove();
     this.audioErrorSubscription?.remove();
     this.bargeInSubscription?.remove();
+    this.speechEndSubscription?.remove();
     this.playbackSubscription?.remove();
     this.audioChunkSubscription = null;
     this.audioErrorSubscription = null;
     this.bargeInSubscription = null;
+    this.speechEndSubscription = null;
     this.playbackSubscription = null;
     this.assistantPlaybackActive = false;
     this.suppressRecognitionUntil = 0;
@@ -853,14 +869,10 @@ function buildDeepgramLiveUrl(baseUrl: string, model: string, language: string):
   url.searchParams.set('interim_results', 'true');
   url.searchParams.set('smart_format', 'true');
   url.searchParams.set('vad_events', 'true');
-  url.searchParams.set('endpointing', '220');
-  url.searchParams.set('utterance_end_ms', '700');
+  url.searchParams.set('endpointing', '180');
+  url.searchParams.set('utterance_end_ms', '1000');
   const normalizedLanguage = language.trim();
-  if (normalizedLanguage) {
-    url.searchParams.set('language', normalizedLanguage);
-  } else {
-    url.searchParams.set('detect_language', 'true');
-  }
+  url.searchParams.set('language', normalizedLanguage || 'multi');
   return url.toString();
 }
 
