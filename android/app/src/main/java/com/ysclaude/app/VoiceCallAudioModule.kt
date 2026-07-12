@@ -45,6 +45,13 @@ class VoiceCallAudioModule(
     private const val BARGE_IN_MIN_SPEECH_MS = 140
     private const val BARGE_IN_COOLDOWN_MS = 1_500L
     private const val BARGE_IN_RECOGNITION_OPEN_MS = 2_500L
+    private const val MIC_PREROLL_MS = 520
+    private const val MIC_START_MIN_SPEECH_MS = 60
+    private const val MIC_TRAILING_AUDIO_MS = 180
+    private const val MIC_END_SILENCE_MS = 520
+    private const val MIC_INITIAL_NOISE_RMS = 260.0
+    private const val MIC_MIN_START_RMS = 320.0
+    private const val MIC_MIN_ACTIVE_RMS = 220.0
   }
 
   override fun getName(): String = "VoiceCallAudio"
@@ -71,11 +78,16 @@ class VoiceCallAudioModule(
   private var previousAudioMode: Int? = null
   private var previousSpeakerphone: Boolean? = null
   private val bargeInPreroll = ArrayDeque<ByteArray>()
+  private val micPreroll = ArrayDeque<ByteArray>()
   private val bargeInLock = Any()
   private var playbackGateStartedAtMs = 0L
   private var playbackEchoRms = 900.0
   private var bargeInSpeechMs = 0
   private var bargeInLastEventAtMs = 0L
+  private var micSpeechActive = false
+  private var micSpeechMs = 0
+  private var micSilenceMs = 0
+  private var micNoiseRms = MIC_INITIAL_NOISE_RMS
 
   @ReactMethod
   fun startMic(sampleRate: Double, chunkMs: Double, promise: Promise) {
@@ -135,6 +147,7 @@ class VoiceCallAudioModule(
 
       audioRecord = record
       attachVoiceEffects(record.audioSessionId)
+      resetMicGate()
       micRunning.set(true)
       record.startRecording()
       micThread = thread(name = "VoiceCallMic") {
@@ -150,13 +163,7 @@ class VoiceCallAudioModule(
               }
               continue
             }
-            sendEvent(
-              "VoiceCallAudioChunk",
-              Arguments.createMap().apply {
-                putString("base64", Base64.encodeToString(payload, Base64.NO_WRAP))
-                putInt("sampleRate", normalizedSampleRate)
-              }
-            )
+            processListeningMicChunk(payload, normalizedChunkMs, normalizedSampleRate)
           }
         }
       }
@@ -576,6 +583,7 @@ class VoiceCallAudioModule(
     if (!bargeInTriggered.compareAndSet(false, true)) return
     bargeInLastEventAtMs = System.currentTimeMillis()
     micSuppressedUntilMs.set(0)
+    resetMicGate()
     val chunks = Arguments.createArray()
     synchronized(bargeInLock) {
       bargeInPreroll.forEach { chunk ->
@@ -591,6 +599,94 @@ class VoiceCallAudioModule(
       }
     )
     clearClipQueue()
+  }
+
+  private fun processListeningMicChunk(payload: ByteArray, chunkMs: Int, sampleRate: Int) {
+    rememberMicPreroll(payload, chunkMs)
+
+    val rms = calculatePcmRms(payload)
+    val peak = calculatePcmPeak(payload)
+    val likelySpeech = isLikelyUserSpeech(rms, peak)
+
+    if (likelySpeech) {
+      micSpeechMs += chunkMs
+      micSilenceMs = 0
+      if (!micSpeechActive && micSpeechMs >= MIC_START_MIN_SPEECH_MS) {
+        micSpeechActive = true
+        emitMicPreroll(sampleRate)
+        return
+      }
+      if (micSpeechActive) {
+        emitMicChunk(payload, sampleRate)
+      }
+      return
+    }
+
+    if (micSpeechActive) {
+      micSilenceMs += chunkMs
+      if (micSilenceMs <= MIC_TRAILING_AUDIO_MS) {
+        emitMicChunk(payload, sampleRate)
+      }
+      if (micSilenceMs >= MIC_END_SILENCE_MS) {
+        micSpeechActive = false
+        micSpeechMs = 0
+        micSilenceMs = 0
+        micPreroll.clear()
+      }
+      return
+    }
+
+    micSpeechMs = maxOf(0, micSpeechMs - chunkMs)
+    updateMicNoiseFloor(rms)
+  }
+
+  private fun rememberMicPreroll(payload: ByteArray, chunkMs: Int) {
+    val maxChunks = maxOf(1, MIC_PREROLL_MS / chunkMs)
+    micPreroll.add(payload.copyOf())
+    while (micPreroll.size > maxChunks) {
+      micPreroll.pollFirst()
+    }
+  }
+
+  private fun isLikelyUserSpeech(rms: Double, peak: Int): Boolean {
+    val threshold = if (micSpeechActive) {
+      maxOf(MIC_MIN_ACTIVE_RMS, min(720.0, micNoiseRms * 1.25 + 80.0))
+    } else {
+      maxOf(MIC_MIN_START_RMS, min(980.0, micNoiseRms * 1.65 + 120.0))
+    }
+    val peakThreshold = if (micSpeechActive) 700 else 950
+    val sustainedSpeech = rms >= threshold && peak >= peakThreshold
+    val clearSpeechPeak = peak >= 3_200 && rms >= maxOf(MIC_MIN_ACTIVE_RMS, micNoiseRms * 1.2)
+    return sustainedSpeech || clearSpeechPeak
+  }
+
+  private fun updateMicNoiseFloor(rms: Double) {
+    val capped = min(rms, maxOf(MIC_INITIAL_NOISE_RMS, micNoiseRms * 1.8))
+    micNoiseRms = micNoiseRms * 0.96 + capped * 0.04
+  }
+
+  private fun emitMicPreroll(sampleRate: Int) {
+    while (micPreroll.isNotEmpty()) {
+      micPreroll.pollFirst()?.let { emitMicChunk(it, sampleRate) }
+    }
+  }
+
+  private fun emitMicChunk(payload: ByteArray, sampleRate: Int) {
+    sendEvent(
+      "VoiceCallAudioChunk",
+      Arguments.createMap().apply {
+        putString("base64", Base64.encodeToString(payload, Base64.NO_WRAP))
+        putInt("sampleRate", sampleRate)
+      }
+    )
+  }
+
+  private fun resetMicGate() {
+    micPreroll.clear()
+    micSpeechActive = false
+    micSpeechMs = 0
+    micSilenceMs = 0
+    micNoiseRms = MIC_INITIAL_NOISE_RMS
   }
 
   private fun calculatePcmRms(payload: ByteArray): Double {
@@ -678,6 +774,7 @@ class VoiceCallAudioModule(
     gainControl = null
     audioRecord?.release()
     audioRecord = null
+    resetMicGate()
   }
 
   private fun cleanupSpeaker() {

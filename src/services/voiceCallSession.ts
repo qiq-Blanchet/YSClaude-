@@ -45,14 +45,22 @@ const DEEPGRAM_SAMPLE_RATE = 16000;
 const MINIMAX_SAMPLE_RATE = 32000;
 const PLAYBACK_RECOGNITION_SUPPRESS_MS = 900;
 const BARGE_IN_RECOGNITION_OPEN_MS = 2500;
-const HARD_TTS_BOUNDARY = /[。！？!?；;\n]/;
-const MAX_TTS_SEGMENT_CHARS = 80;
+const PENDING_TRANSCRIPT_FLUSH_MS = 750;
+const TTS_SEGMENT_BOUNDARY = /[。！？!?；;，,、\n]/;
+const MAX_TTS_SEGMENT_CHARS = 44;
+const MINIMAX_TASK_START_FALLBACK_MS = 350;
+const SPEECH_BRACKETED_CONTENT_PATTERNS = [
+  /\([^()]*\)/g,
+  /（[^（）]*）/g,
+  /\[[^\[\]]*\]/g,
+  /<[^<>]*>/g,
+  /\{[^{}]*\}/g,
+];
+const SPEECH_TRAILING_BRACKETED_CONTENT = /[\(（\[{<][^\)）\]}>]*$/;
 const NativeWebSocket = WebSocket as any;
-const VOICE_CALL_START_SYSTEM_MESSAGE = [
-  '开启语音通话',
-  '',
-  '当前正在与用户进行实时语音通话。请把接下来的回复当作会被 TTS 朗读出来的口语回复：优先简洁、自然、可直接念出；避免 Markdown 表格、长列表、复杂括号说明和不适合朗读的格式；如果内容较长，请先给结论，再分段说明。',
-].join('\n');
+const VOICE_CALL_START_SYSTEM_MESSAGE = '开启语音通话，以下内容为通话记录';
+const VOICE_CALL_RUNTIME_INSTRUCTION =
+  '当前正在与用户进行实时语音通话。请把接下来的回复当作会被 TTS 朗读出来的口语回复：优先简洁、自然、可直接念出；避免 Markdown 表格、长列表、复杂括号说明和不适合朗读的格式；如果内容较长，请先给结论，再分段说明。';
 const VOICE_CALL_END_SYSTEM_MESSAGE = '语音通话结束';
 
 export function isAndroidVoiceCallAvailable(): boolean {
@@ -354,7 +362,7 @@ export class AndroidVoiceCallSession {
       this.pendingTranscriptFlushTimer = null;
       if (this.snapshot.status !== 'listening') return;
       this.flushFinalTranscript();
-    }, 1200);
+    }, PENDING_TRANSCRIPT_FLUSH_MS);
   }
 
   private clearPendingTranscriptFlush(): void {
@@ -382,7 +390,10 @@ export class AndroidVoiceCallSession {
       throw new Error(useChatStore.getState().error || '发送语音文字失败');
     }
     this.startAssistantTtsBridge();
-    await useChatStore.getState().triggerResponse();
+    await useChatStore.getState().triggerResponse({
+      skipStickerInstruction: true,
+      additionalRuntimeSections: [VOICE_CALL_RUNTIME_INSTRUCTION],
+    });
     this.flushPendingTtsText(true);
     this.finishMiniMax();
     if (this.snapshot.active && this.snapshot.status !== 'error') {
@@ -468,7 +479,7 @@ export class AndroidVoiceCallSession {
         if (this.minimaxWs === ws && ws.readyState === WebSocket.OPEN && !this.ttsStartSent) {
           this.sendMiniMaxTaskStart(ws, config);
         }
-      }, 1200);
+      }, MINIMAX_TASK_START_FALLBACK_MS);
     };
     ws.onerror = () => {
       this.tryNextMiniMaxEndpoint(ws, config, 'WebSocket connection failed');
@@ -799,8 +810,8 @@ function buildDeepgramLiveUrl(baseUrl: string, model: string, language: string):
   url.searchParams.set('interim_results', 'true');
   url.searchParams.set('smart_format', 'true');
   url.searchParams.set('vad_events', 'true');
-  url.searchParams.set('endpointing', '300');
-  url.searchParams.set('utterance_end_ms', '1000');
+  url.searchParams.set('endpointing', '220');
+  url.searchParams.set('utterance_end_ms', '700');
   const normalizedLanguage = language.trim();
   if (normalizedLanguage) {
     url.searchParams.set('language', normalizedLanguage);
@@ -851,22 +862,36 @@ function uniqueJoin(parts: string[]): string {
 }
 
 function extractSpeakableAssistantText(content: string): string {
-  return content
+  return stripSpeechBracketedContent(content
     .replace(/<thinking>[\s\S]*?<\/thinking>/gi, ' ')
-    .replace(/<thinking>[\s\S]*$/gi, ' ')
-    .replace(/<[^<>]*>/g, ' ')
+    .replace(/<thinking>[\s\S]*$/gi, ' '))
     .replace(/\s+/g, ' ')
     .trimStart();
 }
 
+function stripSpeechBracketedContent(text: string): string {
+  let previous = text;
+  let next = previous;
+  for (let pass = 0; pass < 8; pass += 1) {
+    next = previous;
+    SPEECH_BRACKETED_CONTENT_PATTERNS.forEach((pattern) => {
+      pattern.lastIndex = 0;
+      next = next.replace(pattern, ' ');
+    });
+    if (next === previous) break;
+    previous = next;
+  }
+  return next.replace(SPEECH_TRAILING_BRACKETED_CONTENT, ' ');
+}
+
 function findTtsBoundary(text: string): number {
   for (let index = 0; index < text.length; index += 1) {
-    if (HARD_TTS_BOUNDARY.test(text[index])) {
-      HARD_TTS_BOUNDARY.lastIndex = 0;
+    if (TTS_SEGMENT_BOUNDARY.test(text[index])) {
+      TTS_SEGMENT_BOUNDARY.lastIndex = 0;
       return index;
     }
   }
-  HARD_TTS_BOUNDARY.lastIndex = 0;
+  TTS_SEGMENT_BOUNDARY.lastIndex = 0;
   return -1;
 }
 

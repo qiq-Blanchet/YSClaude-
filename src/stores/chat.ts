@@ -657,7 +657,7 @@ interface ChatState {
     preferredConversationId?: string | null;
     showLoading?: boolean;
   }) => Promise<void>;
-  triggerResponse: () => Promise<void>;
+  triggerResponse: (options?: ChatTriggerResponseOptions) => Promise<void>;
   markMessagesForAutoHideAfterResponse: (ids: string[]) => void;
   stopStreaming: () => void;
   newConversation: () => void;
@@ -680,6 +680,11 @@ interface ChatState {
   removeHiddenRange: (index: number) => Promise<void>;
   setHiddenRanges: (ranges: HiddenRange[]) => Promise<void>;
   setMessageHidden: (id: string, hidden: boolean) => Promise<void>;
+}
+
+interface ChatTriggerResponseOptions {
+  skipStickerInstruction?: boolean;
+  additionalRuntimeSections?: string[];
 }
 
 interface VoiceRecordingInput {
@@ -1392,7 +1397,8 @@ async function syncPromptCacheRemoteInboxImpl(
 }
 
 async function buildStableSystemPrompt(
-  settings: ReturnType<typeof useSettingsStore.getState>
+  settings: ReturnType<typeof useSettingsStore.getState>,
+  options: ChatTriggerResponseOptions = {}
 ): Promise<string> {
   const stableSystemSections = [
     settings.systemPrompt.trim() || 'You are a helpful assistant.',
@@ -1414,9 +1420,11 @@ async function buildStableSystemPrompt(
     console.warn('[Chat] 读取收藏日记失败:', err);
   }
 
-  const stickerInstruction = buildStickerSystemInstruction(settings.stickerConfig?.assistantStickers);
-  if (stickerInstruction) {
-    stableSystemSections.push(stickerInstruction);
+  if (!options.skipStickerInstruction) {
+    const stickerInstruction = buildStickerSystemInstruction(settings.stickerConfig?.assistantStickers);
+    if (stickerInstruction) {
+      stableSystemSections.push(stickerInstruction);
+    }
   }
   const pictureInstruction = buildPictureSystemInstruction(!!settings.imageGenerationConfig?.enabled);
   if (pictureInstruction) {
@@ -1842,7 +1850,8 @@ async function runToolLoop(
 async function streamAssistantResponse(
   get: () => ChatState,
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
-  conversationId: string
+  conversationId: string,
+  options: ChatTriggerResponseOptions = {}
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   const config = settings.apiConfigs[settings.activeConfigIndex];
@@ -2041,6 +2050,12 @@ async function streamAssistantResponse(
     runtimeSections.push(`上一条消息时间：${previousMessageTime}`);
   }
   runtimeSections.push(`当前时间：${formatCurrentTime()}`);
+  if (options.additionalRuntimeSections) {
+    options.additionalRuntimeSections
+      .map((section) => section.trim())
+      .filter(Boolean)
+      .forEach((section) => runtimeSections.push(section));
+  }
 
   const runtimeContext = [
     '以下是附加信息：',
@@ -2066,7 +2081,7 @@ async function streamAssistantResponse(
     }
   }
 
-  const fullSystemPrompt = await buildStableSystemPrompt(settings);
+  const fullSystemPrompt = await buildStableSystemPrompt(settings, options);
   const promptCacheEnabled = !!settings.promptCacheConfig?.enabled;
   const promptCacheTtl: PromptCacheTtl = settings.promptCacheConfig?.ttl === '1h' ? '1h' : '5m';
   const promptCacheCompatibility = config.promptCacheCompatibility || 'standard';
@@ -2853,7 +2868,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // 仅触发 AI 回复（针对当前历史消息），不新增用户消息。
-  triggerResponse: async () => {
+  triggerResponse: async (options = {}) => {
     let { conversationId, messages, isStreaming } = get();
     if (isStreaming) return;
 
@@ -2894,7 +2909,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set({ isStreaming: true, error: null });
     try {
-      await streamAssistantResponse(get, set, conversationId);
+      await streamAssistantResponse(get, set, conversationId, options);
     } finally {
       await clearPendingResponseBoundaryMessageId(conversationId);
     }
