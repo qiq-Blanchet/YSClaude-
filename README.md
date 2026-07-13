@@ -1,4 +1,4 @@
-# YSClaude
+# YSClaude二改/慎
 
 YSClaude 是一个基于 Expo 和 React Native 的 Android 优先 AI 伴侣应用。应用以聊天为主入口，围绕本地长期记忆、工具调用、网页交互、阅读、音乐、专注、日报、来信、悬浮窗和 Android 原生能力扩展，构建一个可长期运行、可本地持久化、可主动触达用户的移动端 AI 工作台。
 
