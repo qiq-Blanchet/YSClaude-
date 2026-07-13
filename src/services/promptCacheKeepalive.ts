@@ -1,6 +1,7 @@
 import { AppState, type AppStateStatus } from 'react-native';
 import { ChatMessage } from './api';
 import { useSettingsStore, type PromptCacheCompatibility, type PromptCacheConfig, type PromptCacheTtl, type ThinkingCompatibility, type ThinkingEffort } from '../stores/settings';
+import type { APIRequestHeaders } from '../types';
 
 const KEEPALIVE_SYNC_TIMEOUT_MS = 10000;
 const SNAPSHOT_SYNC_DEBOUNCE_MS = 5 * 60 * 1000;
@@ -32,6 +33,7 @@ export interface PromptCacheRemoteSnapshot {
     baseUrl: string;
     apiKey: string;
     model: string;
+    customHeaders?: APIRequestHeaders;
     messages: ChatMessage[];
     temperature?: number;
     generateThinking?: boolean;

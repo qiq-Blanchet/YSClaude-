@@ -420,6 +420,70 @@ export const createSettingsStyles = (colors: ThemeColors) => StyleSheet.create({
   platformChipTypeSelected: {
     color: colors.textSecondary,
   },
+  customHeadersTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  customHeadersToggleText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  customHeaderRow: {
+    gap: 6,
+    marginBottom: 10,
+  },
+  customHeaderInput: {
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  customHeaderValueRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+  },
+  customHeaderValueInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  customHeaderRemoveButton: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: 8,
+  },
+  customHeaderRemoveText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  customHeaderAddButton: {
+    minHeight: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.primary,
+    borderRadius: 8,
+    backgroundColor: colors.inputBackground,
+  },
+  customHeaderAddText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  customHeadersStorageHint: {
+    color: colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 8,
+  },
   modelRow: { flexDirection: 'row', gap: 8 },
   fetchButton: {
     backgroundColor: colors.primary, borderRadius: 12,
@@ -1055,4 +1119,3 @@ export const createSettingsStyles = (colors: ThemeColors) => StyleSheet.create({
   modalConfirm: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.primary },
   modalConfirmText: { fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
 });
-

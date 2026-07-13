@@ -1,9 +1,10 @@
 ﻿import { create } from 'zustand';
-import { Message, Conversation, HiddenRange, ToolInvocation, GeneratedPicture, DailyPaper, ConversationArtifact, VoiceAttachment, LocationAttachment } from '../types';
+import { Message, Conversation, HiddenRange, ToolInvocation, GeneratedPicture, DailyPaper, ConversationArtifact, VoiceAttachment, LocationAttachment, type APIRequestHeaders } from '../types';
 import { randomUUID } from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import { Alert } from 'react-native';
 import { ChatMessage, streamChat, streamChatCompletion } from '../services/api';
+import { isSameAPIBaseUrl, normalizeCustomAPIHeaders } from '../services/apiHeaders';
 import { deleteGeneratedImageFile, generateOpenAIImage } from '../services/imageGeneration';
 import { deleteMessageVoiceFile } from '../services/voiceFiles';
 import { notifyReplyReady } from '../services/notifications';
@@ -295,7 +296,10 @@ function resolveImageGenerationConfig() {
   const quality = imageConfig.quality?.trim() || 'auto';
 
   if (!baseUrl || !apiKey || !model) return null;
-  return { baseUrl, apiKey, model, size, quality };
+  const customHeaders = isSameAPIBaseUrl(baseUrl, chatConfig?.baseUrl || '')
+    ? chatConfig?.customHeaders
+    : undefined;
+  return { baseUrl, apiKey, customHeaders, model, size, quality };
 }
 
 async function generatePictureForMessage(
@@ -364,6 +368,7 @@ async function generatePictureForMessage(
     const result = await generateOpenAIImage({
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
+      customHeaders: config.customHeaders,
       model: config.model,
       prompt: finalPrompt,
       size: config.size,
@@ -563,6 +568,10 @@ async function transcribeMessageVoice(
         : provider === 'aliyun'
           ? sttConfig.aliyunApiKey
           : sttConfig.openAiApiKey.trim() || chatConfig?.apiKey || '';
+  const customHeaders =
+    provider === 'openai' && isSameAPIBaseUrl(baseUrl, chatConfig?.baseUrl || '')
+      ? chatConfig?.customHeaders
+      : undefined;
 
   if (!baseUrl || !apiKey) {
     const providerLabel =
@@ -593,6 +602,7 @@ async function transcribeMessageVoice(
       provider,
       baseUrl,
       apiKey,
+      customHeaders,
       uri: voice.uri,
       mimeType: voice.mimeType,
       fileName: `${voice.id}${extensionFromUri(voice.uri)}`,
@@ -1537,6 +1547,7 @@ async function buildPromptCacheKeepaliveRequest(
   baseUrl: string;
   apiKey: string;
   model: string;
+  customHeaders?: APIRequestHeaders;
   messages: ChatMessage[];
   temperature?: number;
   generateThinking?: boolean;
@@ -1610,6 +1621,7 @@ async function buildPromptCacheKeepaliveRequest(
   const fullSystemPrompt = await buildStableSystemPrompt(settings);
   const promptCacheTtl: PromptCacheTtl = settings.promptCacheConfig?.ttl === '1h' ? '1h' : '5m';
   const promptCacheCompatibility = config.promptCacheCompatibility || 'standard';
+  const customHeaders = normalizeCustomAPIHeaders(config.customHeaders);
   const suffixMessages: ChatMessage[] = [{
     role: 'user',
     content: '这是一次 Prompt 缓存保活请求。请不要输出任何内容。',
@@ -1619,6 +1631,7 @@ async function buildPromptCacheKeepaliveRequest(
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     model: config.model,
+    ...(Object.keys(customHeaders).length > 0 ? { customHeaders } : {}),
     messages: buildRequestMessages(
       fullSystemPrompt,
       settings.stablePromptRole || 'system',
@@ -1650,6 +1663,7 @@ async function runToolLoop(
     baseUrl: string;
     apiKey: string;
     model: string;
+    customHeaders?: APIRequestHeaders;
     temperature?: number;
     generateThinking?: boolean;
     thinkingEffort?: ThinkingEffort;
@@ -1737,6 +1751,7 @@ async function runToolLoop(
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       model: config.model,
+      customHeaders: config.customHeaders,
       messages,
       maxTokens,
       temperature: config.temperature,
@@ -2245,6 +2260,7 @@ async function streamAssistantResponse(
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         model: config.model,
+        customHeaders: config.customHeaders,
         temperature: config.temperature,
         generateThinking: config.generateThinking,
         thinkingEffort,
@@ -2273,6 +2289,7 @@ async function streamAssistantResponse(
           baseUrl: config.baseUrl,
           apiKey: config.apiKey,
           model: config.model,
+          customHeaders: config.customHeaders,
           messages: outgoingMessages,
           maxTokens: settings.maxOutputTokens || undefined,
           temperature: config.temperature,

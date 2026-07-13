@@ -89,6 +89,7 @@ async function generateLetterContent(
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       model: config.model,
+      customHeaders: config.customHeaders,
       messages,
       maxTokens: settings.maxOutputTokens || undefined,
       temperature: config.temperature,

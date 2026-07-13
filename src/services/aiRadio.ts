@@ -455,6 +455,7 @@ async function generateOpeningPlan(options: RadioGenerationOptions): Promise<Rad
     baseUrl: options.apiConfig.baseUrl,
     apiKey: options.apiConfig.apiKey,
     model: options.apiConfig.model,
+    customHeaders: options.apiConfig.customHeaders,
     temperature: 0.85,
     usageContext: {
       feature: 'radio',
@@ -505,6 +506,7 @@ async function generateContinuationPlan(options: ContinueRadioOptions): Promise<
     baseUrl: options.apiConfig.baseUrl,
     apiKey: options.apiConfig.apiKey,
     model: options.apiConfig.model,
+    customHeaders: options.apiConfig.customHeaders,
     temperature: 0.85,
     usageContext: {
       feature: 'radio',
@@ -574,6 +576,7 @@ async function generateScriptPlan({
     baseUrl: apiConfig.baseUrl,
     apiKey: apiConfig.apiKey,
     model: apiConfig.model,
+    customHeaders: apiConfig.customHeaders,
     temperature: 0.8,
     usageContext: {
       feature: 'radio',
@@ -773,6 +776,7 @@ export async function summarizeRadioSession({
     baseUrl: apiConfig.baseUrl,
     apiKey: apiConfig.apiKey,
     model: apiConfig.model,
+    customHeaders: apiConfig.customHeaders,
     temperature: 0.5,
     usageContext: {
       feature: 'radio',

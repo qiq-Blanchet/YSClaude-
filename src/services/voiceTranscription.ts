@@ -1,5 +1,7 @@
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, UploadType } from 'expo-file-system';
+import type { APIRequestHeaders } from '../types';
+import { buildAPIRequestHeaders } from './apiHeaders';
 
 const DEFAULT_TRANSCRIPTION_MODEL = 'whisper-1';
 
@@ -7,6 +9,7 @@ export interface TranscribeVoiceRequest {
   provider?: 'openai' | 'fish' | 'deepgram' | 'aliyun';
   baseUrl: string;
   apiKey: string;
+  customHeaders?: APIRequestHeaders;
   uri: string;
   mimeType?: string;
   fileName?: string;
@@ -19,6 +22,7 @@ export async function transcribeVoice({
   provider = 'openai',
   baseUrl,
   apiKey,
+  customHeaders,
   uri,
   mimeType,
   fileName,
@@ -56,6 +60,7 @@ export async function transcribeVoice({
   return transcribeOpenAI({
     baseUrl,
     apiKey,
+    customHeaders,
     uri,
     mimeType,
     fileName,
@@ -66,6 +71,7 @@ export async function transcribeVoice({
 async function transcribeOpenAI({
   baseUrl,
   apiKey,
+  customHeaders,
   uri,
   mimeType,
   fileName,
@@ -78,9 +84,7 @@ async function transcribeOpenAI({
 
   const response = await expoFetch(endpoint, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
-    },
+    headers: buildAPIRequestHeaders(apiKey, customHeaders),
     body: formData as any,
   }) as Response;
 

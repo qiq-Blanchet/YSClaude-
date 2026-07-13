@@ -2,6 +2,8 @@ import { fetch as expoFetch } from 'expo/fetch';
 import { randomUUID } from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
+import type { APIRequestHeaders } from '../types';
+import { buildAPIRequestHeaders } from './apiHeaders';
 
 interface ImageGenerationReferenceImage {
   uri: string;
@@ -10,6 +12,7 @@ interface ImageGenerationReferenceImage {
 export interface ImageGenerationRequest {
   baseUrl: string;
   apiKey: string;
+  customHeaders?: APIRequestHeaders;
   model: string;
   prompt: string;
   size?: string;
@@ -114,7 +117,7 @@ async function downloadImage(url: string, fileStem: string): Promise<string> {
 }
 
 async function editOpenAIImage(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
-  const { baseUrl, apiKey, model, prompt, size, quality, referenceImages, signal, onProgress } = request;
+  const { baseUrl, apiKey, customHeaders, model, prompt, size, quality, referenceImages, signal, onProgress } = request;
   const url = `${normalizeBaseUrl(baseUrl)}/images/edits`;
   const form = new FormData();
 
@@ -139,9 +142,7 @@ async function editOpenAIImage(request: ImageGenerationRequest): Promise<ImageGe
   onProgress?.('上传参考图并请求生图');
   const response = await expoFetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
-    },
+    headers: buildAPIRequestHeaders(apiKey, customHeaders),
     body: form as any,
     signal,
   });
@@ -154,7 +155,7 @@ async function editOpenAIImage(request: ImageGenerationRequest): Promise<ImageGe
 }
 
 export async function generateOpenAIImage(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
-  const { baseUrl, apiKey, model, prompt, size, quality, referenceImages, signal, onProgress } = request;
+  const { baseUrl, apiKey, customHeaders, model, prompt, size, quality, referenceImages, signal, onProgress } = request;
   if (referenceImages && referenceImages.length > 0) {
     return editOpenAIImage(request);
   }
@@ -174,10 +175,7 @@ export async function generateOpenAIImage(request: ImageGenerationRequest): Prom
   onProgress?.('请求生图 API');
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey.trim()}`,
-    },
+    headers: buildAPIRequestHeaders(apiKey, customHeaders, { json: true }),
     body: JSON.stringify(body),
     signal,
   });

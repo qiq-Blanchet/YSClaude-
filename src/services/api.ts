@@ -2,7 +2,8 @@ import { fetch as expoFetch } from 'expo/fetch';
 import { randomUUID } from 'expo-crypto';
 import { ToolDefinition } from './tools';
 import { insertApiUsageEvent } from '../db/operations';
-import { ApiTokenUsage, ApiUsageStatus, type PromptCacheCompatibility, type PromptCacheTtl, type ThinkingCompatibility, type ThinkingEffort } from '../types';
+import { ApiTokenUsage, ApiUsageStatus, type APIRequestHeaders, type PromptCacheCompatibility, type PromptCacheTtl, type ThinkingCompatibility, type ThinkingEffort } from '../types';
+import { buildAPIRequestHeaders } from './apiHeaders';
 
 export interface ChatMessage {
   role: string;
@@ -15,6 +16,7 @@ interface ChatRequest {
   baseUrl: string;
   apiKey: string;
   model: string;
+  customHeaders?: APIRequestHeaders;
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
@@ -219,21 +221,27 @@ export function applyThinkingConfig(
   }
 }
 
-function buildChatHeaders(apiKey: string, promptCache?: PromptCacheRequestOptions): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey.trim()}`,
-  };
-
-  if (
+function buildChatHeaders(
+  apiKey: string,
+  customHeaders?: APIRequestHeaders,
+  promptCache?: PromptCacheRequestOptions
+): APIRequestHeaders {
+  const useNanogptOneHourCache =
     promptCache?.enabled &&
     promptCache.ttl === '1h' &&
-    promptCache.compatibility === 'nanogpt'
-  ) {
-    headers['anthropic-beta'] = 'prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11';
-  }
+    promptCache.compatibility === 'nanogpt';
 
-  return headers;
+  return buildAPIRequestHeaders(apiKey, customHeaders, {
+    json: true,
+    requiredHeaderTokens: useNanogptOneHourCache
+      ? {
+          'anthropic-beta': [
+            'prompt-caching-2024-07-31',
+            'extended-cache-ttl-2025-04-11',
+          ],
+        }
+      : undefined,
+  });
 }
 
 function applyPromptCacheCompatibility(body: Record<string, any>, promptCache?: PromptCacheRequestOptions): void {
@@ -346,7 +354,7 @@ async function recordApiUsage({
 export async function chatCompletion(
   request: ChatRequestWithTools
 ): Promise<ChatCompletionResponse> {
-  const { baseUrl, apiKey, model, messages, maxTokens, temperature, generateThinking, thinkingEffort, thinkingCompatibility, tools, sessionId, promptCache } = request;
+  const { baseUrl, apiKey, model, customHeaders, messages, maxTokens, temperature, generateThinking, thinkingEffort, thinkingCompatibility, tools, sessionId, promptCache } = request;
   const startedAt = Date.now();
 
   const url = `${baseUrl.trim().replace(/\/$/, '')}/chat/completions`;
@@ -374,7 +382,7 @@ export async function chatCompletion(
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: buildChatHeaders(apiKey, promptCache),
+      headers: buildChatHeaders(apiKey, customHeaders, promptCache),
       body: JSON.stringify(body),
     });
 
@@ -423,7 +431,7 @@ export async function streamChatCompletion(
   onToken: (token: string) => void,
   signal?: AbortSignal
 ): Promise<StreamChatCompletionResult> {
-  const { baseUrl, apiKey, model, messages, maxTokens, temperature, generateThinking, thinkingEffort, thinkingCompatibility, returnNativeThinking, tools, sessionId, promptCache } = request;
+  const { baseUrl, apiKey, model, customHeaders, messages, maxTokens, temperature, generateThinking, thinkingEffort, thinkingCompatibility, returnNativeThinking, tools, sessionId, promptCache } = request;
   const startedAt = Date.now();
 
   const url = `${baseUrl.trim().replace(/\/$/, '')}/chat/completions`;
@@ -454,7 +462,7 @@ export async function streamChatCompletion(
   try {
     const response = await expoFetch(url, {
       method: 'POST',
-      headers: buildChatHeaders(apiKey, promptCache),
+      headers: buildChatHeaders(apiKey, customHeaders, promptCache),
       body: JSON.stringify(body),
       signal,
     });
@@ -610,7 +618,7 @@ export async function streamChat(
   onToken: (token: string) => void,
   signal?: AbortSignal
 ): Promise<ApiTokenUsage | undefined> {
-  const { baseUrl, apiKey, model, messages, maxTokens, temperature, generateThinking, thinkingEffort, thinkingCompatibility, returnNativeThinking, sessionId, promptCache } = request;
+  const { baseUrl, apiKey, model, customHeaders, messages, maxTokens, temperature, generateThinking, thinkingEffort, thinkingCompatibility, returnNativeThinking, sessionId, promptCache } = request;
   const startedAt = Date.now();
 
   const url = `${baseUrl.trim().replace(/\/$/, '')}/chat/completions`;
@@ -638,7 +646,7 @@ export async function streamChat(
   try {
     const response = await expoFetch(url, {
       method: 'POST',
-      headers: buildChatHeaders(apiKey, promptCache),
+      headers: buildChatHeaders(apiKey, customHeaders, promptCache),
       body: JSON.stringify(body),
       signal,
     });

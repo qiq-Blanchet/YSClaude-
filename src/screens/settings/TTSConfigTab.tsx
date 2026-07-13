@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, Text,
 import { useSettingsPageColors } from '../../theme/colors';
 import { type STTProvider, type TTSConfig, type TTSProvider, useSettingsStore } from '../../stores/settings';
 import { getTTSConfigMissingMessage, isTTSConfigReady, playTTS } from '../../services/tts';
+import { buildAPIRequestHeaders, isSameAPIBaseUrl } from '../../services/apiHeaders';
 import { createSettingsStyles } from './styles';
 
 type TTSConfigTabProps = {
@@ -243,9 +244,15 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
       if (!baseUrl || !key) {
         throw new Error('请先填写 OpenAI STT Base URL 和 API Key，或配置主聊天 API');
       }
-      const data = await fetchJson(`${baseUrl.replace(/\/$/, '')}/models`, {
-        Authorization: `Bearer ${key}`,
-      });
+      const data = await fetchJson(
+        `${baseUrl.replace(/\/$/, '')}/models`,
+        buildAPIRequestHeaders(
+          key,
+          isSameAPIBaseUrl(baseUrl, activeConfig?.baseUrl || '')
+            ? activeConfig?.customHeaders
+            : undefined
+        )
+      );
       const ids = extractModelIds(data).filter((id) => /whisper|transcribe|audio/i.test(id));
       return ids.length > 0 ? ids : extractModelIds(data);
     }

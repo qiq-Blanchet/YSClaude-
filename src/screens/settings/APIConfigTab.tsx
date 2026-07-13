@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Image, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSettingsPageColors } from '../../theme/colors';
 import {
@@ -12,8 +12,15 @@ import {
 } from '../../stores/settings';
 import { useChatStore } from '../../stores/chat';
 import { applyThinkingConfig } from '../../services/api';
+import {
+  buildAPIRequestHeaders,
+  isSameAPIBaseUrl,
+  normalizeCustomAPIHeaders,
+  validateCustomAPIHeader,
+} from '../../services/apiHeaders';
 import { createAndShareBackup, pickBackupFile, restoreBackup, type PickedBackup } from '../../services/backup';
 import { disablePromptCacheRemoteKeepalive } from '../../services/promptCacheKeepalive';
+import type { APIRequestHeaders } from '../../types';
 import { formatFullTime } from '../../utils/time';
 import { createSettingsStyles } from './styles';
 
@@ -46,6 +53,47 @@ const THINKING_EFFORT_OPTIONS: Array<{ value: ThinkingEffort; label: string }> =
 type ModelPickerTarget = 'chat' | 'image';
 type ImageOptionTarget = 'size' | 'quality';
 
+type CustomHeaderDraft = {
+  id: string;
+  name: string;
+  value: string;
+};
+
+let nextCustomHeaderDraftId = 0;
+
+function createCustomHeaderDraft(name = '', value = ''): CustomHeaderDraft {
+  nextCustomHeaderDraftId += 1;
+  return { id: `api-header-${nextCustomHeaderDraftId}`, name, value };
+}
+
+function parseCustomHeaderDrafts(
+  drafts: CustomHeaderDraft[]
+): { headers?: APIRequestHeaders; error?: string } {
+  const entries: Array<[string, string]> = [];
+  const seenNames = new Set<string>();
+
+  for (let index = 0; index < drafts.length; index += 1) {
+    const draft = drafts[index];
+    const name = draft.name.trim();
+    const value = draft.value.trim();
+    if (!name && !value) continue;
+
+    const validationError = validateCustomAPIHeader(name, draft.value);
+    if (validationError) {
+      return { error: `第 ${index + 1} 行：${validationError}` };
+    }
+
+    const normalizedName = name.toLowerCase();
+    if (seenNames.has(normalizedName)) {
+      return { error: `第 ${index + 1} 行：请求头「${name}」重复` };
+    }
+    seenNames.add(normalizedName);
+    entries.push([name, value]);
+  }
+
+  return { headers: Object.fromEntries(entries) };
+}
+
 export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProps) {
   const colors = useSettingsPageColors();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
@@ -74,6 +122,8 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>('high');
   const [thinkingCompatibility, setThinkingCompatibility] = useState<ThinkingCompatibility>('standard');
   const [promptCacheCompatibility, setPromptCacheCompatibility] = useState<PromptCacheCompatibility>('standard');
+  const [customHeaderDrafts, setCustomHeaderDrafts] = useState<CustomHeaderDraft[]>([]);
+  const [showCustomHeaderValues, setShowCustomHeaderValues] = useState(false);
   const [imageEnabled, setImageEnabled] = useState(imageGenerationConfig?.enabled ?? false);
   const [imageBaseUrl, setImageBaseUrl] = useState(imageGenerationConfig?.baseUrl || '');
   const [imageApiKey, setImageApiKey] = useState(imageGenerationConfig?.apiKey || '');
@@ -106,8 +156,17 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
     setImageQuality(imageGenerationConfig?.quality || 'auto');
   }, [_hydrated, imageGenerationConfig]);
 
-  function loadConfig(index: number) {
-    const config = apiConfigs[index];
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        setShowCustomHeaderValues(false);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  function loadConfig(index: number, configs: NamedAPIConfig[] = apiConfigs) {
+    const config = configs[index];
     if (config) {
       setName(config.name);
       setBaseUrl(config.baseUrl);
@@ -119,6 +178,12 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
       setThinkingEffort(config.thinkingEffort || 'high');
       setThinkingCompatibility(config.thinkingCompatibility || 'standard');
       setPromptCacheCompatibility(config.promptCacheCompatibility || 'standard');
+      setCustomHeaderDrafts(
+        Object.entries(normalizeCustomAPIHeaders(config.customHeaders)).map(([headerName, headerValue]) =>
+          createCustomHeaderDraft(headerName, headerValue)
+        )
+      );
+      setShowCustomHeaderValues(false);
     }
   }
 
@@ -133,21 +198,45 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
     setThinkingEffort('high');
     setThinkingCompatibility('standard');
     setPromptCacheCompatibility('standard');
+    setCustomHeaderDrafts([]);
+    setShowCustomHeaderValues(false);
     setModels([]);
   }
 
-  function resolveModelFetchCredentials(target: ModelPickerTarget) {
+  function updateCustomHeaderDraft(
+    id: string,
+    field: 'name' | 'value',
+    value: string
+  ) {
+    setCustomHeaderDrafts((drafts) =>
+      drafts.map((draft) => (draft.id === id ? { ...draft, [field]: value } : draft))
+    );
+  }
+
+  function removeCustomHeaderDraft(id: string) {
+    setCustomHeaderDrafts((drafts) => drafts.filter((draft) => draft.id !== id));
+  }
+
+  function resolveModelFetchCredentials(
+    target: ModelPickerTarget,
+    currentChatHeaders?: APIRequestHeaders
+  ) {
     if (target === 'chat') {
       return {
         baseUrl: baseUrl.trim(),
         apiKey: apiKey.trim(),
+        customHeaders: currentChatHeaders,
       };
     }
 
     const activeConfig = apiConfigs[activeConfigIndex];
+    const resolvedBaseUrl = imageBaseUrl.trim() || activeConfig?.baseUrl?.trim() || '';
     return {
-      baseUrl: imageBaseUrl.trim() || activeConfig?.baseUrl?.trim() || '',
+      baseUrl: resolvedBaseUrl,
       apiKey: imageApiKey.trim() || activeConfig?.apiKey?.trim() || '',
+      customHeaders: isSameAPIBaseUrl(resolvedBaseUrl, activeConfig?.baseUrl || '')
+        ? activeConfig?.customHeaders
+        : undefined,
     };
   }
 
@@ -160,7 +249,15 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
   }
 
   async function handleFetchModels(target: ModelPickerTarget = 'chat') {
-    const credentials = resolveModelFetchCredentials(target);
+    const parsedHeaders: { headers?: APIRequestHeaders; error?: string } = target === 'chat'
+      ? parseCustomHeaderDrafts(customHeaderDrafts)
+      : { headers: undefined };
+    if (parsedHeaders.error) {
+      Alert.alert('请求头配置有误', parsedHeaders.error);
+      return;
+    }
+
+    const credentials = resolveModelFetchCredentials(target, parsedHeaders.headers);
     if (!credentials.baseUrl || !credentials.apiKey) {
       Alert.alert('提示', '请先填写 Base URL 和 API Key');
       return;
@@ -169,7 +266,7 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
     try {
       const url = `${credentials.baseUrl.replace(/\/$/, '')}/models`;
       const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${credentials.apiKey}` },
+        headers: buildAPIRequestHeaders(credentials.apiKey, credentials.customHeaders),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
@@ -193,6 +290,11 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
       Alert.alert('提示', '请填写完整配置');
       return;
     }
+    const parsedHeaders = parseCustomHeaderDrafts(customHeaderDrafts);
+    if (parsedHeaders.error) {
+      Alert.alert('请求头配置有误', parsedHeaders.error);
+      return;
+    }
     setTesting(true);
     try {
       const parsedTemperature = parseOptionalTemperature(temperature);
@@ -210,10 +312,7 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
       applyThinkingConfig(body, generateThinking, thinkingCompatibility, thinkingEffort);
       const resp = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey.trim()}`,
-        },
+        headers: buildAPIRequestHeaders(apiKey, parsedHeaders.headers, { json: true }),
         body: JSON.stringify(body),
       });
       if (!resp.ok) {
@@ -239,8 +338,16 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
       Alert.alert('提示', 'temperature 必须是 0 到 2 之间的数字，或留空使用服务默认值');
       return;
     }
+    const parsedHeaders = parseCustomHeaderDrafts(customHeaderDrafts);
+    if (parsedHeaders.error) {
+      Alert.alert('请求头配置有误', parsedHeaders.error);
+      return;
+    }
     const config: NamedAPIConfig = {
       name: trimmedName, baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), model: model.trim(),
+      ...(parsedHeaders.headers && Object.keys(parsedHeaders.headers).length > 0
+        ? { customHeaders: parsedHeaders.headers }
+        : {}),
       ...(parsedTemperature !== undefined ? { temperature: parsedTemperature } : {}),
       generateThinking,
       thinkingEffort,
@@ -251,6 +358,7 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
     saveAPIConfig(config);
     const newIndex = useSettingsStore.getState().apiConfigs.findIndex((c) => c.name === trimmedName);
     if (newIndex >= 0) setActiveConfig(newIndex);
+    setShowCustomHeaderValues(false);
     showToast(`配置「${trimmedName}」已保存`);
   }
 
@@ -308,8 +416,12 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
         text: '删除', style: 'destructive',
         onPress: () => {
           removeAPIConfig(index);
-          if (apiConfigs.length > 1) loadConfig(0);
-          else handleNew();
+          const nextState = useSettingsStore.getState();
+          if (nextState.apiConfigs.length > 0) {
+            loadConfig(nextState.activeConfigIndex, nextState.apiConfigs);
+          } else {
+            handleNew();
+          }
         },
       },
     ]);
@@ -444,6 +556,72 @@ export function APIConfigTab({ showToast, keyboardBottomInset }: SettingsTabProp
         <Text style={styles.label}>API Key</Text>
         <TextInput style={styles.input} value={apiKey} onChangeText={setApiKey}
           placeholder="sk-..." placeholderTextColor={colors.textTertiary} secureTextEntry autoCapitalize="none" />
+      </View>
+      <View style={styles.field}>
+        <View style={styles.customHeadersTitleRow}>
+          <Text style={styles.label}>自定义请求头</Text>
+          {customHeaderDrafts.length > 0 && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={showCustomHeaderValues ? '隐藏请求头值' : '显示请求头值'}
+              onPress={() => setShowCustomHeaderValues((visible) => !visible)}
+              hitSlop={8}
+            >
+              <Text style={styles.customHeadersToggleText}>
+                {showCustomHeaderValues ? '隐藏值' : '显示值'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+        <Text style={styles.hint}>
+          会随此配置的模型拉取、连接测试和聊天请求发送，适合向 gateway 传递记忆开关或用户标识。Authorization、Content-Type 等系统字段不可覆盖。
+        </Text>
+        {customHeaderDrafts.map((draft, index) => (
+          <View key={draft.id} style={styles.customHeaderRow}>
+            <TextInput
+              style={[styles.input, styles.customHeaderInput]}
+              value={draft.name}
+              onChangeText={(value) => updateCustomHeaderDraft(draft.id, 'name', value)}
+              placeholder="X-Memory-User"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessibilityLabel={`第 ${index + 1} 个请求头名称`}
+            />
+            <View style={styles.customHeaderValueRow}>
+              <TextInput
+                style={[styles.input, styles.customHeaderValueInput]}
+                value={draft.value}
+                onChangeText={(value) => updateCustomHeaderDraft(draft.id, 'value', value)}
+                placeholder="请求头值"
+                placeholderTextColor={colors.textTertiary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry={!showCustomHeaderValues}
+                accessibilityLabel={`第 ${index + 1} 个请求头值${draft.name ? `：${draft.name}` : ''}`}
+              />
+              <Pressable
+                style={styles.customHeaderRemoveButton}
+                onPress={() => removeCustomHeaderDraft(draft.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`删除第 ${index + 1} 个请求头${draft.name ? `：${draft.name}` : ''}`}
+              >
+                <Text style={styles.customHeaderRemoveText}>删除</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))}
+        <Pressable
+          style={styles.customHeaderAddButton}
+          onPress={() => setCustomHeaderDrafts((drafts) => [...drafts, createCustomHeaderDraft()])}
+          accessibilityRole="button"
+          accessibilityLabel="添加请求头"
+        >
+          <Text style={styles.customHeaderAddText}>＋ 添加请求头</Text>
+        </Pressable>
+        <Text style={styles.customHeadersStorageHint}>
+          请求头值会像 API Key 一样保存在本机并包含在完整备份中；开启远程 Prompt 缓存保活时，也会发送给你配置的保活服务。
+        </Text>
       </View>
       <View style={styles.field}>
         <Text style={styles.label}>Model</Text>

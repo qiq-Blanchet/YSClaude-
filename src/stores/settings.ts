@@ -1064,13 +1064,14 @@ export const useSettingsStore = create<SettingsState>()(
         }),
 
       removeAPIConfig: (index) =>
-        set((state) => ({
-          apiConfigs: state.apiConfigs.filter((_, i) => i !== index),
-          activeConfigIndex:
-            state.activeConfigIndex >= state.apiConfigs.length - 1
-              ? Math.max(0, state.apiConfigs.length - 2)
-              : state.activeConfigIndex,
-        })),
+        set((state) => {
+          const apiConfigs = state.apiConfigs.filter((_, i) => i !== index);
+          const lastIndex = Math.max(0, apiConfigs.length - 1);
+          const activeConfigIndex = index < state.activeConfigIndex
+            ? state.activeConfigIndex - 1
+            : Math.min(state.activeConfigIndex, lastIndex);
+          return { apiConfigs, activeConfigIndex };
+        }),
 
       setSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
       setStablePromptRole: (role) => set({ stablePromptRole: role }),

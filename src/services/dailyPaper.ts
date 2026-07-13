@@ -324,6 +324,7 @@ async function generateContentWithAi(
     baseUrl: apiConfig.baseUrl,
     apiKey: apiConfig.apiKey,
     model: apiConfig.model,
+    customHeaders: apiConfig.customHeaders,
     temperature: apiConfig.temperature ?? 0.4,
     maxTokens: maxOutputTokens ?? 1800,
     usageContext: {

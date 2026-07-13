@@ -234,10 +234,13 @@ export type ThinkingCompatibility = 'standard' | 'openrouter' | 'nanogpt';
 export type ThinkingEffort = 'low' | 'medium' | 'high';
 export type StablePromptRole = 'system' | 'user' | 'assistant';
 
+export type APIRequestHeaders = Record<string, string>;
+
 export interface APIConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  customHeaders?: APIRequestHeaders;
   temperature?: number;
   generateThinking?: boolean;
   thinkingEffort?: ThinkingEffort;
