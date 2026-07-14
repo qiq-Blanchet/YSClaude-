@@ -16,6 +16,9 @@ const TTS_PROVIDERS: Array<{ key: TTSProvider; label: string }> = [
   { key: 'fish', label: 'Fish Audio' },
   { key: 'deepgram', label: 'Deepgram' },
   { key: 'cartesia', label: 'Cartesia' },
+  { key: 'qwen', label: 'Qwen TTS' },
+  { key: 'elevenlabs', label: 'ElevenLabs' },
+  { key: 'moss', label: 'MOSS（MOSI）' },
 ];
 const MINIMAX_TTS_MODELS = [
   'speech-2.8-hd',
@@ -68,6 +71,20 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
   const [ttsCartesiaLanguage, setTtsCartesiaLanguage] = useState(ttsConfig.cartesiaLanguage);
   const [ttsCartesiaSpeed, setTtsCartesiaSpeed] = useState(String(ttsConfig.cartesiaSpeed));
   const [ttsCartesiaVolume, setTtsCartesiaVolume] = useState(String(ttsConfig.cartesiaVolume));
+  const [ttsQwenBaseUrl, setTtsQwenBaseUrl] = useState(ttsConfig.qwenBaseUrl);
+  const [ttsQwenApiKey, setTtsQwenApiKey] = useState(ttsConfig.qwenApiKey);
+  const [ttsQwenModel, setTtsQwenModel] = useState(ttsConfig.qwenModel);
+  const [ttsQwenVoice, setTtsQwenVoice] = useState(ttsConfig.qwenVoice);
+  const [ttsQwenLanguageType, setTtsQwenLanguageType] = useState(ttsConfig.qwenLanguageType);
+  const [ttsElevenLabsBaseUrl, setTtsElevenLabsBaseUrl] = useState(ttsConfig.elevenLabsBaseUrl);
+  const [ttsElevenLabsApiKey, setTtsElevenLabsApiKey] = useState(ttsConfig.elevenLabsApiKey);
+  const [ttsElevenLabsVoiceId, setTtsElevenLabsVoiceId] = useState(ttsConfig.elevenLabsVoiceId);
+  const [ttsElevenLabsModel, setTtsElevenLabsModel] = useState(ttsConfig.elevenLabsModel);
+  const [ttsElevenLabsOutputFormat, setTtsElevenLabsOutputFormat] = useState(ttsConfig.elevenLabsOutputFormat);
+  const [ttsMossBaseUrl, setTtsMossBaseUrl] = useState(ttsConfig.mossBaseUrl);
+  const [ttsMossApiKey, setTtsMossApiKey] = useState(ttsConfig.mossApiKey);
+  const [ttsMossModel, setTtsMossModel] = useState(ttsConfig.mossModel);
+  const [ttsMossVoiceId, setTtsMossVoiceId] = useState(ttsConfig.mossVoiceId);
   const [sttProvider, setSttProvider] = useState<STTProvider>(sttConfig.provider);
   const [openAiBaseUrl, setOpenAiBaseUrl] = useState(sttConfig.openAiBaseUrl);
   const [openAiApiKey, setOpenAiApiKey] = useState(sttConfig.openAiApiKey);
@@ -91,8 +108,8 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
   const [showVoiceModelPicker, setShowVoiceModelPicker] = useState(false);
   const [fetchingModelTarget, setFetchingModelTarget] = useState<VoiceModelTarget | null>(null);
 
-  function handleSave() {
-    setTTSConfig({
+  function buildTTSConfigDraft(): TTSConfig {
+    return {
       provider: ttsProvider,
       groupId: groupId.trim(),
       apiKey: apiKey.trim(),
@@ -118,7 +135,25 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
       cartesiaLanguage: ttsCartesiaLanguage.trim() || 'zh',
       cartesiaSpeed: parseFloat(ttsCartesiaSpeed) || 1,
       cartesiaVolume: parseFloat(ttsCartesiaVolume) || 1,
-    });
+      qwenBaseUrl: ttsQwenBaseUrl.trim() || 'https://dashscope.aliyuncs.com/api/v1',
+      qwenApiKey: ttsQwenApiKey.trim(),
+      qwenModel: ttsQwenModel.trim() || 'qwen3-tts-flash',
+      qwenVoice: ttsQwenVoice.trim() || 'Cherry',
+      qwenLanguageType: ttsQwenLanguageType.trim() || 'Auto',
+      elevenLabsBaseUrl: ttsElevenLabsBaseUrl.trim() || 'https://api.elevenlabs.io',
+      elevenLabsApiKey: ttsElevenLabsApiKey.trim(),
+      elevenLabsVoiceId: ttsElevenLabsVoiceId.trim(),
+      elevenLabsModel: ttsElevenLabsModel.trim() || 'eleven_flash_v2_5',
+      elevenLabsOutputFormat: ttsElevenLabsOutputFormat.trim() || 'mp3_44100_128',
+      mossBaseUrl: ttsMossBaseUrl.trim() || 'https://studio.mosi.cn',
+      mossApiKey: ttsMossApiKey.trim(),
+      mossModel: ttsMossModel.trim() || 'moss-tts',
+      mossVoiceId: ttsMossVoiceId.trim(),
+    };
+  }
+
+  function handleSave() {
+    setTTSConfig(buildTTSConfigDraft());
     setSTTConfig({
       provider: sttProvider,
       openAiBaseUrl: openAiBaseUrl.trim(),
@@ -279,33 +314,7 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
   }
 
   async function handleTest() {
-    const testConfig: TTSConfig = {
-        provider: ttsProvider,
-        groupId: groupId.trim(),
-        apiKey: apiKey.trim(),
-        model: model.trim() || 'speech-02-hd',
-        voiceId: voiceId.trim(),
-        speed: parseFloat(speed) || 1,
-        vol: parseFloat(vol) || 1,
-        pitch: parseFloat(pitch) || 0,
-        fishBaseUrl: ttsFishBaseUrl.trim() || 'https://api.fish.audio',
-        fishApiKey: ttsFishApiKey.trim(),
-        fishReferenceId: ttsFishReferenceId.trim(),
-        fishModel: ttsFishModel.trim() || 's2-pro',
-        fishFormat: ttsFishFormat,
-        fishSpeed: parseFloat(ttsFishSpeed) || 1,
-        fishVolume: Number.isFinite(parseFloat(ttsFishVolume)) ? parseFloat(ttsFishVolume) : 0,
-        deepgramBaseUrl: ttsDeepgramBaseUrl.trim() || 'https://api.deepgram.com/v1',
-        deepgramApiKey: ttsDeepgramApiKey.trim(),
-        deepgramModel: ttsDeepgramModel.trim() || 'aura-2-thalia-en',
-        cartesiaBaseUrl: ttsCartesiaBaseUrl.trim() || 'https://api.cartesia.ai',
-        cartesiaApiKey: ttsCartesiaApiKey.trim(),
-        cartesiaModel: ttsCartesiaModel.trim() || 'sonic-3.5',
-        cartesiaVoiceId: ttsCartesiaVoiceId.trim(),
-        cartesiaLanguage: ttsCartesiaLanguage.trim() || 'zh',
-        cartesiaSpeed: parseFloat(ttsCartesiaSpeed) || 1,
-        cartesiaVolume: parseFloat(ttsCartesiaVolume) || 1,
-    };
+    const testConfig = buildTTSConfigDraft();
     if (!isTTSConfigReady(testConfig)) {
       Alert.alert('提示', getTTSConfigMissingMessage(testConfig));
       return;
@@ -632,6 +641,175 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
             />
           </View>
         </>
+      ) : ttsProvider === 'qwen' ? (
+        <>
+          <Text style={styles.hint}>阿里云百炼 Qwen TTS；Base URL 与 API Key 所属地域需要一致，单次合成最多 512 tokens。</Text>
+          <View style={styles.field}>
+            <Text style={styles.label}>Qwen TTS Base URL</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsQwenBaseUrl}
+              onChangeText={setTtsQwenBaseUrl}
+              placeholder="https://dashscope.aliyuncs.com/api/v1"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>Qwen TTS API Key</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsQwenApiKey}
+              onChangeText={setTtsQwenApiKey}
+              placeholder="sk-..."
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>模型</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsQwenModel}
+              onChangeText={setTtsQwenModel}
+              placeholder="qwen3-tts-flash"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>音色 Voice</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsQwenVoice}
+              onChangeText={setTtsQwenVoice}
+              placeholder="Cherry"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>语言类型</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsQwenLanguageType}
+              onChangeText={setTtsQwenLanguageType}
+              placeholder="Auto / Chinese / English"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+        </>
+      ) : ttsProvider === 'elevenlabs' ? (
+        <>
+          <Text style={styles.hint}>建议保持 MP3 默认格式；裸 PCM、μ-law 与 A-law 音频无法保证在应用内直接播放。</Text>
+          <View style={styles.field}>
+            <Text style={styles.label}>ElevenLabs Base URL</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsElevenLabsBaseUrl}
+              onChangeText={setTtsElevenLabsBaseUrl}
+              placeholder="https://api.elevenlabs.io"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>ElevenLabs API Key</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsElevenLabsApiKey}
+              onChangeText={setTtsElevenLabsApiKey}
+              placeholder="ElevenLabs API Key"
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>Voice ID</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsElevenLabsVoiceId}
+              onChangeText={setTtsElevenLabsVoiceId}
+              placeholder="ElevenLabs voice id"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>Model ID</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsElevenLabsModel}
+              onChangeText={setTtsElevenLabsModel}
+              placeholder="eleven_flash_v2_5"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>输出格式</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsElevenLabsOutputFormat}
+              onChangeText={setTtsElevenLabsOutputFormat}
+              placeholder="mp3_44100_128"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+        </>
+      ) : ttsProvider === 'moss' ? (
+        <>
+          <Text style={styles.hint}>适配 MOSI Studio 官方 MOSS TTS 云服务；自托管 MOSS 的 OpenAI 兼容接口不使用这套配置。</Text>
+          <View style={styles.field}>
+            <Text style={styles.label}>MOSI Studio Base URL</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsMossBaseUrl}
+              onChangeText={setTtsMossBaseUrl}
+              placeholder="https://studio.mosi.cn"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>MOSI Studio API Key</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsMossApiKey}
+              onChangeText={setTtsMossApiKey}
+              placeholder="MOSI Studio API Key"
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>模型</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsMossModel}
+              onChangeText={setTtsMossModel}
+              placeholder="moss-tts"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>Voice ID</Text>
+            <TextInput
+              style={styles.input}
+              value={ttsMossVoiceId}
+              onChangeText={setTtsMossVoiceId}
+              placeholder="MOSI 公共音色或克隆音色 ID"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+            />
+          </View>
+        </>
       ) : (
         <>
           <View style={styles.field}>
@@ -681,6 +859,10 @@ export function TTSConfigTab({ showToast, keyboardBottomInset }: TTSConfigTabPro
           </View>
         </>
       )}
+
+      <Text style={styles.hint}>
+        TTS 密钥保存在本机，并会包含在完整备份中。Qwen、ElevenLabs 与 MOSS 暂不用于实时语音通话。
+      </Text>
 
       <View style={styles.actions}>
         <Pressable style={styles.testButton} onPress={handleTest} disabled={testing}>

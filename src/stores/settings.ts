@@ -74,7 +74,14 @@ export type { PromptCacheCompatibility, PromptCacheTtl, ThinkingCompatibility, T
 // HiddenRange 已迁移到 src/types，这里 re-export 保持旧的 import 路径兼容。
 export type { HiddenRange } from '../types';
 
-export type TTSProvider = 'minimax' | 'fish' | 'deepgram' | 'cartesia';
+export type TTSProvider =
+  | 'minimax'
+  | 'fish'
+  | 'deepgram'
+  | 'cartesia'
+  | 'qwen'
+  | 'elevenlabs'
+  | 'moss';
 
 export interface TTSConfig {
   provider: TTSProvider;
@@ -102,6 +109,20 @@ export interface TTSConfig {
   cartesiaLanguage: string;
   cartesiaSpeed: number;
   cartesiaVolume: number;
+  qwenBaseUrl: string;
+  qwenApiKey: string;
+  qwenModel: string;
+  qwenVoice: string;
+  qwenLanguageType: string;
+  elevenLabsBaseUrl: string;
+  elevenLabsApiKey: string;
+  elevenLabsVoiceId: string;
+  elevenLabsModel: string;
+  elevenLabsOutputFormat: string;
+  mossBaseUrl: string;
+  mossApiKey: string;
+  mossModel: string;
+  mossVoiceId: string;
 }
 
 export type STTProvider = 'openai' | 'fish' | 'deepgram' | 'aliyun';
@@ -567,7 +588,12 @@ function normalizeSTTConfig(config?: Partial<STTConfig>): STTConfig {
 
 function normalizeTTSConfig(config?: Partial<TTSConfig>): TTSConfig {
   const provider =
-    config?.provider === 'fish' || config?.provider === 'deepgram' || config?.provider === 'cartesia'
+    config?.provider === 'fish' ||
+    config?.provider === 'deepgram' ||
+    config?.provider === 'cartesia' ||
+    config?.provider === 'qwen' ||
+    config?.provider === 'elevenlabs' ||
+    config?.provider === 'moss'
       ? config.provider
       : 'minimax';
   return {
@@ -599,6 +625,20 @@ function normalizeTTSConfig(config?: Partial<TTSConfig>): TTSConfig {
     cartesiaLanguage: config?.cartesiaLanguage || 'zh',
     cartesiaSpeed: config?.cartesiaSpeed ?? 1,
     cartesiaVolume: config?.cartesiaVolume ?? 1,
+    qwenBaseUrl: config?.qwenBaseUrl || 'https://dashscope.aliyuncs.com/api/v1',
+    qwenApiKey: config?.qwenApiKey || '',
+    qwenModel: config?.qwenModel || 'qwen3-tts-flash',
+    qwenVoice: config?.qwenVoice || 'Cherry',
+    qwenLanguageType: config?.qwenLanguageType || 'Auto',
+    elevenLabsBaseUrl: config?.elevenLabsBaseUrl || 'https://api.elevenlabs.io',
+    elevenLabsApiKey: config?.elevenLabsApiKey || '',
+    elevenLabsVoiceId: config?.elevenLabsVoiceId || '',
+    elevenLabsModel: config?.elevenLabsModel || 'eleven_flash_v2_5',
+    elevenLabsOutputFormat: config?.elevenLabsOutputFormat || 'mp3_44100_128',
+    mossBaseUrl: config?.mossBaseUrl || 'https://studio.mosi.cn',
+    mossApiKey: config?.mossApiKey || '',
+    mossModel: config?.mossModel || 'moss-tts',
+    mossVoiceId: config?.mossVoiceId || '',
   };
 }
 

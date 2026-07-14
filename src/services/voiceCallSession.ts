@@ -210,7 +210,7 @@ export class AndroidVoiceCallSession {
       throw new Error('语音通话需要在设置中将 STT 选择为 Deepgram 或阿里百炼');
     }
     if (settings.ttsConfig.provider !== 'minimax' && settings.ttsConfig.provider !== 'cartesia') {
-      throw new Error('语音通话当前仅支持 MiniMax TTS');
+      throw new Error('语音通话当前仅支持 MiniMax 或 Cartesia TTS');
     }
     if (settings.sttConfig.provider === 'deepgram' && !settings.sttConfig.deepgramApiKey.trim()) {
       throw new Error('请先配置 Deepgram API Key');

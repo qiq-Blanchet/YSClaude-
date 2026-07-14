@@ -332,7 +332,7 @@ export function FloatingBallTab({ showToast, keyboardBottomInset }: FloatingBall
       <View style={styles.switchRow}>
         <View style={styles.nativeToolText}>
           <Text style={styles.label}>悬浮球 TTS</Text>
-          <Text style={styles.hint}>使用 TTS 配置中的 MiniMax 语音参数朗读悬浮球气泡文字</Text>
+          <Text style={styles.hint}>使用当前 TTS 服务商配置朗读悬浮球气泡文字</Text>
         </View>
         <Switch
           value={!!floatingBallConfig.ttsEnabled}
